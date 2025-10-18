@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Gestión de Bodega</title>
+    <!-- Carga de Tailwind CSS para un diseño moderno y responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .card-shadow {
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        }
+        /* Clase para animar la actualización de la tarjeta */
+        .card-update-pulse {
+            animation: pulse-ring 0.6s ease-out;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(44, 123, 229, 0.4); }
+            70% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(44, 123, 229, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(44, 123, 229, 0); }
+        }
+        .tab-button {
+            border: 1px solid transparent;
+            border-bottom: none;
+            margin-bottom: -1px; /* Para que parezca unirse al borde inferior */
+        }
+        .tab-button.active {
+            background-color: #ffffff;
+            color: #2c7be5;
+            border-color: #e2e8f0;
+            border-bottom-color: #ffffff;
+            box-shadow: 0 -2px 4px rgba(0,0,0,0.05);
+        }
+        /* Estilo para hacer que la tabla sea responsiva en móviles */
+        .overflow-x-auto {
+            -webkit-overflow-scrolling: touch;
+        }
+        .input-inline {
+            width: 100%;
+            padding: 4px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div id="app-container" style="display: none;">
+        <div class="max-w-6xl mx-auto">
+            <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Sistema de Gestión de Bodega</h1>
+
+            <!-- DASHBOARD DE TARJETAS (Ganancia Mínima) -->
+            <div id="dashboard" class="mb-8">
+                <!-- La tarjeta principal se renderiza aquí -->
+            </div>
+
+            <!-- CONTROL DE PESTAÑAS -->
+            <div class="flex border-b border-gray-200 mb-6 -mx-4 sm:mx-0">
+                <button id="tab-registro" class="tab-button active px-4 py-2 text-sm font-medium rounded-t-lg transition-colors bg-white text-blue-600 shadow-sm ml-4 sm:ml-0" onclick="switchTab('registro')">
+                    Registro de Ventas Diarias
+                </button>
+                <button id="tab-inventario" class="tab-button px-4 py-2 text-sm font-medium text-gray-500 rounded-t-lg hover:bg-gray-100 transition-colors" onclick="switchTab('inventario')">
+                    Gestión de Inventario
+                </button>
+            </div>
+
+            <!-- CONTENIDO DE LAS PESTAÑAS -->
+            <div id="content-registro" class="bg-white p-4 sm:p-6 rounded-xl card-shadow min-h-[500px]">
+                <!-- Contenido de Registro de Ventas -->
+            </div>
+
+            <div id="content-inventario" class="bg-white p-4 sm:p-6 rounded-xl card-shadow min-h-[500px] hidden">
+                <!-- Contenido de Gestión de Inventario -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Carga de la librería de iconos Lucide
+        const lucideScript = document.createElement('script');
+        lucideScript.src = "https://unpkg.com/lucide@latest";
+        document.head.appendChild(lucideScript);
+
+        // --- ESTADO GLOBAL SIMULADO ---
+        let productos = []; 
+        let ventasDiarias = [];
+        const GANANCIA_MINIMA = 60.00; // Meta de Ganancia Fija
+        let nextProductId = 1; // Para IDs únicos al añadir
+
+        // Función de seguridad para crear iconos solo si la librería Lucide está cargada
+        function safeCreateIcons() {
+            if (typeof lucide !== 'undefined' && lucide.createIcons) {
+                lucide.createIcons();
+            }
+        }
+
+        /**
+         * @description Convierte una cadena (entero, decimal o fracción) a un número flotante.
+         * Permite entradas como "1/2", "0.5", "1.5", "3/4", etc.
+         * * FIX: Se prioriza la detección de fracción (X/Y) para evitar que parseFloat 
+         * interprete mal entradas como "1/2" (que parseFloat leería como 1).
+         * * @param {string} inputString Cadena de entrada del campo de cantidad.
+         * @returns {number} El valor flotante, o NaN si la entrada es inválida.
+         */
+        function parseFractionToFloat(inputString) {
+            if (!inputString) return NaN;
+            
+            // Eliminar espacios y reemplazar comas por puntos (por si acaso)
+            const cleanedInput = inputString.trim().replace(',', '.');
+
+            // 1. Intentar como fracción (ej. "1/2", "3/4", "5/2")
+            const fractionMatch = cleanedInput.match(/^(\d+)\/(\d+)$/);
+            if (fractionMatch) {
+                const numerator = parseInt(fractionMatch[1], 10);
+                const denominator = parseInt(fractionMatch[2], 10);
+                
+                if (denominator !== 0) {
+                    return numerator / denominator;
+                }
+            }
+            
+            // 2. Intentar como decimal o entero (solo si no es una fracción X/Y)
+            const decimalValue = parseFloat(cleanedInput);
+            if (!isNaN(decimalValue)) {
+                return decimalValue;
+            }
+
+            return NaN; 
+        }
+
+        // Helper para determinar la unidad de venta a granel.
+        function getUnitFromProductName(name) {
+            name = name.toLowerCase();
+            // Unidades por peso (kilogramos)
+            if (name.includes('1kg') || name.includes(' lenteja 1 kg') || name.includes('harina') || name.includes('azúcar') || name.includes('arroz')) return 'kg';
+            // Unidades por volumen (litros)
+            if (name.includes('1l') || name.includes('(caja 1l)') || name.includes('aceite')) return 'L';
+            // Unidades individuales
+            return 'unid'; 
+        }
+
+        // --- DATOS INICIALES (PRODUCTOS ACTUALIZADOS CON UNIDADES) ---
+        function initializeProducts() {
+            const initialData = [
+                { nombre: "Aceite vegetal Deleite 1L", costo: 7.50 },
+                { nombre: "Aceite vegetal Patrona 1L", costo: 8.00 },
+                { nombre: "Aceite vegetal Primor 1L", costo: 9.20 },
+                { nombre: "Arroz 1 kg", costo: 4.00 }, // Añadido arroz
+                { nombre: "Avena clásica 3 ositos (bolsa)", costo: 4.80 },
+                { nombre: "Avena en Hojuelas Quaker (caja)", costo: 6.50 },
+                { nombre: "Avena quinua 3 ositos (bolsa)", costo: 5.20 },
+                { nombre: "Azúcar 1kg", costo: 4.30 },
+                { nombre: "Bebida (Brut/Cava) Marca no clara", costo: 15.00 },
+                { nombre: "Bolsas de Granos Florida (varios)", costo: 3.50 },
+                { nombre: "Caldos Maggi (cubo x 6)", costo: 2.80 },
+                { nombre: "Canela (bolsa pequeña)", costo: 1.50 },
+                { nombre: "Chocolate de taza (tableta)", costo: 5.50 },
+                { nombre: "Chocolate en Barra Sublime (unid)", costo: 1.80 },
+                { nombre: "Cocoa winter's (lata)", costo: 7.00 },
+                { nombre: "Conserva Florida (atún)", costo: 3.80 },
+                { nombre: "Conserva Gloria (atún)", costo: 3.50 },
+                { nombre: "Detergente en Polvo Noble 1kg", costo: 7.50 },
+                { nombre: "Esencia de Vainilla Katita Vainilla", costo: 3.00 },
+                { nombre: "Fideos sopa Anita 250g", costo: 1.50 },
+                { nombre: "Fideos tallarin Anita 500g", costo: 2.40 },
+                { nombre: "Filtrante Anis Herbi (caja 25u)", costo: 4.50 },
+                { nombre: "Filtrante manzanilla McColin's", costo: 4.80 },
+                { nombre: "Filtrante Te bolsita (caja 25u)", costo: 3.50 },
+                { nombre: "Fosforo (caja)", costo: 0.80 },
+                { nombre: "Granos/Legumbres Compass 500g", costo: 4.00 },
+                { nombre: "Harina 1kg", costo: 3.20 },
+                { nombre: "Harina de Trigo Medalla 1kg", costo: 3.50 },
+                { nombre: "Harina Preparada/Maicena Maizena Duryea", costo: 5.50 },
+                { nombre: "Hongos laurel (bolsa pequeña)", costo: 1.00 },
+                { nombre: "Leche condensada (lata)", costo: 4.80 },
+                { nombre: "Leche Bonlé (lata)", costo: 2.90 },
+                { nombre: "Leche Bonlé (caja 1L)", costo: 3.80 },
+                { nombre: "Leche en bolsa 1L", costo: 3.20 },
+                { nombre: "Leche Gloria (caja 1L)", costo: 4.20 },
+                { nombre: "Leche Gloria (chica lata)", costo: 3.00 },
+                { nombre: "Leche Gloria (grande lata)", costo: 3.90 },
+                { nombre: "Leche Gloria (niños caja)", costo: 4.50 },
+                { nombre: "Leche Gloria zero lactosa (lata)", costo: 3.50 },
+                { nombre: "Leche Gloria zero lactosa (caja)", costo: 4.80 },
+                { nombre: "Leche Laive (lata)", costo: 3.10 },
+                { nombre: "Leche Laive sin lactosa (caja)", costo: 4.90 },
+                { nombre: "Leche Pura vida (chica lata)", costo: 2.80 },
+                { nombre: "Leche Pura vida (grande lata)", costo: 3.70 },
+                { nombre: "Lenteja 1 kg", costo: 6.00 },
+                { nombre: "Maizena Duryea", costo: 5.50 },
+                { nombre: "Mani (bolsa pequeña)", costo: 1.50 },
+                { nombre: "Mayonesa Alacena (sachet)", costo: 2.00 },
+                { nombre: "Mezcla Láctea Pura Vida (caja)", costo: 3.50 },
+                { nombre: "Papel Higiénico Jade (rollo)", costo: 1.20 },
+                { nombre: "Papel Higiénico Noble 2 rollos", costo: 3.00 },
+                { nombre: "Papel Higiénico Paracas 4 rollos", costo: 6.00 },
+                { nombre: "Papel Higiénico Tull 6 rollos", costo: 8.50 },
+                { nombre: "Papel servilleta Sublime", costo: 0.50 },
+                { nombre: "Papel Toalla Nova (rollo)", costo: 5.00 },
+                { nombre: "Papel Toalla Paracas (rollo)", costo: 4.00 },
+                { nombre: "Pimienta comino (bolsa pequeña)", costo: 1.00 },
+                { nombre: "Sala de tomate Don Vittorio", costo: 2.50 },
+                { nombre: "Sillao Ajinomoto (botella)", costo: 4.00 },
+                { nombre: "Sillao Kikí (botella)", costo: 3.80 },
+                { nombre: "Sopas/Condimentos McCrispy's (o similar)", costo: 1.50 },
+                { nombre: "Sopas/Condimentos Sibarita (o similar)", costo: 1.20 },
+                { nombre: "Vainilla Katita", costo: 3.00 },
+            ];
+
+            productos = initialData.map((p) => {
+                const id = nextProductId++;
+                return {
+                    id: id,
+                    nombre: p.nombre,
+                    costo: p.costo,
+                    // Calcula el PVP con un margen del 20% sobre el costo por defecto
+                    precioVenta: parseFloat((p.costo * 1.20).toFixed(2)),
+                    unit: getUnitFromProductName(p.nombre) // Añadido para manejo a granel
+                };
+            });
+        }
+
+        // --- INICIALIZACIÓN ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeProducts();
+            renderizarTodo(); 
+
+            // Una vez que el script de Lucide termine de cargar (asíncronamente), 
+            // nos aseguramos de que todos los iconos se creen.
+            lucideScript.onload = safeCreateIcons;
+        });
+
+        // ------------------------------------------------------------------
+        // --- CONTROL DE PESTAÑAS (TABS) ---
+        // ------------------------------------------------------------------
+
+        function switchTab(tabName) {
+            const tabs = ['registro', 'inventario'];
+            tabs.forEach(tab => {
+                document.getElementById(`content-${tab}`).classList.add('hidden');
+                document.getElementById(`tab-${tab}`).classList.remove('active', 'bg-white', 'text-blue-600', 'shadow-sm');
+                document.getElementById(`tab-${tab}`).classList.remove('text-blue-600');
+                document.getElementById(`tab-${tab}`).classList.add('text-gray-500', 'hover:bg-gray-100');
+            });
+
+            // Activar la pestaña seleccionada
+            document.getElementById(`content-${tabName}`).classList.remove('hidden');
+            document.getElementById(`tab-${tabName}`).classList.add('active', 'bg-white', 'text-blue-600', 'shadow-sm');
+            document.getElementById(`tab-${tabName}`).classList.remove('text-gray-500', 'hover:bg-gray-100');
+            
+            // Re-renderizar el contenido de la pestaña activa
+            renderizarTodo(); 
+            safeCreateIcons(); // Crea iconos en el nuevo contenido
+        }
+
+        // ------------------------------------------------------------------
+        // --- CÁLCULOS GLOBALES ---
+        // ------------------------------------------------------------------
+
+        function calcularTotales() {
+            let totalVenta = 0;
+            let totalGanancia = 0;
+
+            ventasDiarias.forEach(venta => {
+                totalVenta += venta.precioTotal;
+                const gananciaUnitaria = venta.precioVenta - venta.costo;
+                // La ganancia total de la venta es la ganancia unitaria por la cantidad vendida
+                totalGanancia += gananciaUnitaria * venta.cantidad; 
+            });
+
+            return {
+                totalVenta: totalVenta,
+                totalGanancia: totalGanancia
+            };
+        }
+
+        // ------------------------------------------------------------------
+        // --- RENDERIZADO GLOBAL ---
+        // ------------------------------------------------------------------
+
+        function renderizarTodo() {
+            const currentTabElement = document.querySelector('.tab-button.active');
+            let currentTab = 'registro'; 
+
+            if (currentTabElement) {
+                currentTab = currentTabElement.id.split('-')[1];
+            }
+            
+            const totales = calcularTotales();
+            renderDashboard(totales.totalVenta, totales.totalGanancia);
+            
+            if (currentTab === 'registro') renderRegistroVentas();
+            if (currentTab === 'inventario') renderGestionInventario();
+            
+            safeCreateIcons();
+        }
+
+        // ------------------------------------------------------------------
+        // --- RENDERIZADO DEL DASHBOARD (LÓGICA FINAL) ---
+        // ------------------------------------------------------------------
+
+        function renderDashboard(ventaReal, gananciaNeta) {
+            const dashboardContainer = document.getElementById('dashboard');
+            
+            const diferencia = gananciaNeta - GANANCIA_MINIMA;
+            const cumplioMeta = gananciaNeta >= GANANCIA_MINIMA;
+            
+            const colorFondo = cumplioMeta ? 'bg-blue-600' : 'bg-red-500';
+            const icono = cumplioMeta ? 'trending-up' : 'trending-down';
+            const mensajeStatus = cumplioMeta 
+                ? '¡Felicidades! Meta de Ganancia Mínima cumplida.'
+                : 'ALERTA: Ganancia Mínima no alcanzada.';
+            
+            const diferenciaTexto = cumplioMeta 
+                ? `¡Sobrante de S/ ${diferencia.toFixed(2)}!`
+                : `Faltan S/ ${Math.abs(diferencia).toFixed(2)} para los ${GANANCIA_MINIMA.toFixed(2)}.`;
+
+            const tarjetaHTML = `
+                <div id="main-card" class="${colorFondo} text-white p-6 rounded-xl card-shadow transition-all duration-300 card-update-pulse">
+                    
+                    <div class="flex items-start justify-between">
+                        <h2 class="text-lg font-semibold opacity-80 mb-1">VENTA REAL ACUMULADA</h2>
+                        <i data-lucide="${icono}" class="w-6 h-6"></i>
+                    </div>
+
+                    <p class="text-5xl font-extrabold mb-4">
+                        S/ ${ventaReal.toFixed(2)}
+                    </p>
+
+                    <div class="space-y-2 text-sm pt-4 border-t border-white border-opacity-30">
+                        
+                        <div class="flex justify-between">
+                            <span class="opacity-70">Meta Ganancia Mínima:</span>
+                            <span class="font-bold">S/ ${GANANCIA_MINIMA.toFixed(2)}</span>
+                        </div>
+
+                        <div class="flex justify-between text-lg font-bold">
+                            <span>GANANCIA NETA REAL:</span>
+                            <span class="text-white">${gananciaNeta.toFixed(2)}</span>
+                        </div>
+
+                        <div class="flex justify-between font-semibold pt-2">
+                            <span>Estado de la Meta:</span>
+                            <span class="font-extrabold ${cumplioMeta ? 'text-green-200' : 'text-red-200'}">${diferenciaTexto}</span>
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="text-center mt-4 p-3 rounded-lg bg-white border border-gray-200 text-gray-700 font-semibold card-shadow">
+                    ${mensajeStatus}
+                </div>
+            `;
+            
+            dashboardContainer.innerHTML = tarjetaHTML;
+            safeCreateIcons();
+            
+            // Trigger animation
+            const mainCard = document.getElementById('main-card');
+            mainCard.classList.remove('card-update-pulse');
+            void mainCard.offsetWidth; 
+            mainCard.classList.add('card-update-pulse');
+        }
+
+        // ------------------------------------------------------------------
+        // --- PESTAÑA 1: REGISTRO DE VENTAS ---
+        // ------------------------------------------------------------------
+        
+        // Función para actualizar la etiqueta de Cantidad según la unidad del producto
+        function updateQuantityLabel() {
+            const select = document.getElementById('regSelectProducto');
+            const label = document.getElementById('regCantidadLabel');
+            const cantidadInput = document.getElementById('regCantidadVendida');
+
+            if (!select || !label || !cantidadInput) return;
+
+            const selectedOption = select.options[select.selectedIndex];
+            
+            let unitText = 'Unidades';
+            
+            if (selectedOption && selectedOption.value) {
+                const productoSeleccionado = productos.find(p => p.id === parseInt(selectedOption.value));
+                
+                if (productoSeleccionado) {
+                    const unit = productoSeleccionado.unit;
+                    if (unit === 'kg') {
+                        unitText = 'Kilogramos (Ej: 0.5 o 1/2)';
+                    } else if (unit === 'L') {
+                        unitText = 'Litros (Ej: 0.25 o 1/4)';
+                    }
+                }
+            }
+            
+            label.textContent = `Cantidad (${unitText})`;
+        }
+
+
+        function renderRegistroVentas() {
+            const container = document.getElementById('content-registro');
+            if (container.classList.contains('hidden')) return;
+
+            const formHTML = `
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Registrar Venta</h2>
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="col-span-2 md:col-span-1">
+                        <label for="regSelectProducto" class="block text-sm font-medium text-gray-600">Producto</label>
+                        <select id="regSelectProducto" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" onchange="updateSalePrice(); updateQuantityLabel();">
+                            <option value="" disabled selected>-- Elija un producto --</option>
+                            ${productos.map(p => `<option value="${p.id}" data-costo="${p.costo}" data-pvp="${p.precioVenta}">${p.nombre}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div>
+                        <!-- CAMPO MODIFICADO: Ahora es tipo texto para aceptar fracciones y decimales -->
+                        <label for="regCantidadVendida" class="block text-sm font-medium text-gray-600" id="regCantidadLabel">Cantidad (unid)</label>
+                        <input type="text" id="regCantidadVendida" placeholder="Ej: 0.5 o 1/2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" value="1" oninput="updateSalePrice()">
+                    </div>
+                    
+                    <div>
+                        <label for="regPrecioVenta" class="block text-sm font-medium text-gray-600">Precio Total (S/)</label>
+                        <input type="number" id="regPrecioVenta" placeholder="Total" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border font-bold" min="0" step="0.01">
+                        <p id="precio-unitario-hint" class="text-xs text-gray-500 mt-1">PVP unitario sugerido: S/ 0.00</p>
+                    </div>
+
+                    <div>
+                        <label for="regMetodoPago" class="block text-sm font-medium text-gray-600">Método de Pago</label>
+                        <select id="regMetodoPago" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Yape">Yape</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button onclick="registrarVenta()" class="w-full md:w-auto px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors">
+                    Confirmar Venta
+                </button>
+                <p id="msg-venta" class="mt-3 text-sm text-center text-gray-500"></p>
+
+                <!-- LISTA DE VENTAS REGISTRADAS -->
+                <h3 class="text-xl font-semibold mt-8 mb-4 border-t pt-4">Ventas del Día Registradas</h3>
+                <div id="ventas-list" class="space-y-3">
+                    <!-- Lista de ventas va aquí -->
+                </div>
+            `;
+            container.innerHTML = formHTML;
+            updateSalePrice(); // Initial calculation
+            updateQuantityLabel(); // Set initial label
+            renderVentasList();
+        }
+
+        function updateSalePrice() {
+            const select = document.getElementById('regSelectProducto');
+            const cantidadInput = document.getElementById('regCantidadVendida');
+            const precioTotalInput = document.getElementById('regPrecioVenta');
+            const hint = document.getElementById('precio-unitario-hint');
+
+            if (!select || !cantidadInput || !precioTotalInput || !hint) return;
+
+            const selectedOption = select.options[select.selectedIndex];
+            
+            let pvpUnitario = 0;
+            if (selectedOption && selectedOption.value) {
+                const productoSeleccionado = productos.find(p => p.id === parseInt(selectedOption.value));
+                if (productoSeleccionado) {
+                    pvpUnitario = productoSeleccionado.precioVenta;
+                }
+            }
+
+            if (!selectedOption || !selectedOption.value || pvpUnitario === 0) {
+                precioTotalInput.value = '';
+                hint.textContent = 'PVP unitario sugerido: S/ 0.00';
+                return;
+            }
+
+            // APLICAR LA CONVERSIÓN DE FRACCIONES
+            const cantidadDecimal = parseFractionToFloat(cantidadInput.value);
+
+            if (isNaN(cantidadDecimal) || cantidadDecimal <= 0) {
+                precioTotalInput.value = '';
+                hint.textContent = 'Error en Cantidad. Use 1, 0.5, 1/2, etc.';
+                precioTotalInput.classList.add('border-red-500');
+                return;
+            }
+            precioTotalInput.classList.remove('border-red-500');
+            
+            const totalCalculado = (pvpUnitario * cantidadDecimal).toFixed(2);
+            precioTotalInput.value = totalCalculado;
+            hint.textContent = `PVP unitario sugerido: S/ ${pvpUnitario.toFixed(2)} por unidad/kg/L`;
+        }
+
+        function registrarVenta() {
+            const select = document.getElementById('regSelectProducto');
+            const cantidadInput = document.getElementById('regCantidadVendida');
+            const precioTotalInput = document.getElementById('regPrecioVenta');
+            const pagoInput = document.getElementById('regMetodoPago');
+            const msg = document.getElementById('msg-venta');
+            
+            const productoId = parseInt(select.value);
+            
+            // CONVERSIÓN CRÍTICA: Obtener el valor decimal real
+            const cantidadDecimal = parseFractionToFloat(cantidadInput.value); 
+            const precioTotal = parseFloat(precioTotalInput.value);
+            const metodoPago = pagoInput.value;
+
+            const productoVendido = productos.find(p => p.id === productoId);
+
+            if (!productoVendido || isNaN(cantidadDecimal) || cantidadDecimal <= 0 || isNaN(precioTotal) || precioTotal <= 0) {
+                msg.textContent = 'Error: Complete todos los campos correctamente. Use un formato de cantidad válido (ej: 0.5 o 1/2).';
+                msg.className = 'mt-3 text-sm text-center text-red-500 font-semibold';
+                return;
+            }
+            
+            // Si la conversión fue exitosa, usar el valor decimal para el cálculo de la venta
+            const costoUnitario = productoVendido.costo;
+            const precioVentaUnitario = precioTotal / cantidadDecimal; 
+
+            const nuevaVenta = {
+                nombre: productoVendido.nombre,
+                costo: costoUnitario,
+                precioVenta: precioVentaUnitario, // Precio unitario real (por kg/L/unid)
+                cantidad: cantidadDecimal, // Cantidad en formato decimal
+                precioTotal: precioTotal,
+                metodoPago: metodoPago,
+                fecha: new Date().toLocaleTimeString('es-PE')
+            };
+
+            ventasDiarias.push(nuevaVenta);
+            
+            cantidadInput.value = '1';
+            select.value = ''; 
+            precioTotalInput.value = '';
+            
+            const gananciaVenta = (precioVentaUnitario - costoUnitario) * cantidadDecimal;
+            msg.textContent = `Venta registrada. Ganancia: S/ ${gananciaVenta.toFixed(2)} (${metodoPago}).`;
+            msg.className = 'mt-3 text-sm text-center text-green-500 font-semibold';
+            
+            updateQuantityLabel(); // Resetear etiqueta
+            renderizarTodo();
+        }
+
+        function renderVentasList() {
+            const listContainer = document.getElementById('ventas-list');
+            
+            if (!listContainer) return; 
+
+            if (ventasDiarias.length === 0) {
+                listContainer.innerHTML = '<p class="text-gray-500 text-sm">Aún no hay ventas registradas.</p>';
+                return;
+            }
+
+            const listHTML = ventasDiarias.slice().reverse().map((venta) => { 
+                const gananciaUnitaria = venta.precioVenta - venta.costo;
+                const gananciaTotal = gananciaUnitaria * venta.cantidad;
+                const pagoColor = venta.metodoPago === 'Yape' ? 'bg-indigo-100 text-indigo-800' : 'bg-green-100 text-green-800';
+                
+                // Muestra la cantidad con 2 decimales, eliminando '.00' si es un número entero.
+                const displayCantidad = venta.cantidad.toFixed(2).replace(/\.00$/, ''); 
+
+                return `
+                    <div class="flex flex-wrap md:flex-row justify-between items-center p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                        <div class="font-medium text-gray-800 w-full md:w-1/2 mb-2 md:mb-0">
+                            ${displayCantidad}x ${venta.nombre} 
+                            <span class="text-xs text-gray-500 ml-2">(${venta.fecha})</span>
+                        </div>
+                        <div class="text-right flex flex-col sm:flex-row space-x-0 sm:space-x-4 w-full md:w-1/2 items-end md:items-center justify-end">
+                            <span class="text-xs font-medium ${pagoColor} px-2 py-0.5 rounded-full mb-1 sm:mb-0">${venta.metodoPago}</span>
+                            <p class="text-sm font-semibold">Total: S/ ${venta.precioTotal.toFixed(2)}</p>
+                            <p class="text-sm text-green-600 font-bold ml-0 sm:ml-4">G: S/ ${gananciaTotal.toFixed(2)}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            listContainer.innerHTML = listHTML;
+        }
+
+        // ------------------------------------------------------------------
+        // --- PESTAÑA 2: GESTIÓN DE INVENTARIO (SIN CAMBIOS) ---
+        // ------------------------------------------------------------------
+
+        function renderGestionInventario() {
+            const container = document.getElementById('content-inventario');
+            if (container.classList.contains('hidden')) return;
+
+            const inventoryHTML = `
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Lista y Edición de Productos</h2>
+                <p class="text-sm text-gray-500 mb-6">Edite los campos directamente. El PVP sugerido (20% margen) solo es una referencia. Use el botón "Guardar" para registrar los cambios en Costo y PVP Real.</p>
+                
+                <button onclick="addProduct()" class="mb-4 px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors shadow flex items-center">
+                    <i data-lucide="plus" class="w-5 h-5 mr-2"></i> Añadir Nuevo Producto
+                </button>
+
+                <div class="overflow-x-auto rounded-lg border">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Producto</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Costo (S/)</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">PVP Sugerido</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">PVP Real (S/)</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Margen Actual</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Productos van aquí -->
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            container.innerHTML = inventoryHTML;
+            renderInventoryTable();
+            safeCreateIcons(); // Renderiza iconos del botón Añadir
+        }
+
+        function renderInventoryTable() {
+            const tbody = document.getElementById('inventory-table-body');
+            if (!tbody) return;
+
+            tbody.innerHTML = productos.map(p => {
+                const margenActual = p.precioVenta - p.costo;
+                const pvpSugerido = (p.costo * 1.20).toFixed(2);
+                const margenColor = margenActual > 0 ? 'text-green-600' : (margenActual < 0 ? 'text-red-500' : 'text-gray-500');
+
+                return `
+                    <tr id="row-${p.id}" class="hover:bg-gray-50 transition-colors">
+                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                            <input type="text" id="name-${p.id}" value="${p.nombre}" class="input-inline" />
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
+                            <input type="number" id="cost-${p.id}" value="${p.costo.toFixed(2)}" class="input-inline w-20" step="0.01" min="0">
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${pvpSugerido}</td>
+                        <td class="px-3 py-2 whitespace-nowrap">
+                            <input type="number" id="pvp-${p.id}" value="${p.precioVenta.toFixed(2)}" 
+                                class="input-inline w-20" step="0.01" min="0">
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm font-bold ${margenColor}">
+                            S/ ${margenActual.toFixed(2)}
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm space-x-2">
+                            <button onclick="saveProductChanges(${p.id})" class="px-2 py-1 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors text-xs shadow">
+                                Guardar
+                            </button>
+                            <button onclick="confirmDelete(${p.id}, '${p.nombre}')" class="px-2 py-1 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors text-xs shadow">
+                                Eliminar
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function saveProductChanges(productId) {
+            const nameInput = document.getElementById(`name-${productId}`);
+            const costInput = document.getElementById(`cost-${productId}`);
+            const pvpInput = document.getElementById(`pvp-${productId}`);
+
+            const newName = nameInput.value.trim();
+            const newCost = parseFloat(costInput.value);
+            const newPVP = parseFloat(pvpInput.value);
+
+            if (newName === "") {
+                nameInput.focus();
+                alertMessage('El nombre del producto no puede estar vacío.', 'red');
+                return;
+            }
+
+            if (isNaN(newCost) || newCost < 0) {
+                costInput.focus();
+                alertMessage('El Costo debe ser un número positivo.', 'red');
+                return;
+            }
+
+            if (isNaN(newPVP) || newPVP < 0) {
+                pvpInput.focus();
+                alertMessage('El PVP Real debe ser un número positivo.', 'red');
+                return;
+            }
+
+            const productIndex = productos.findIndex(p => p.id === productId);
+            if (productIndex !== -1) {
+                productos[productIndex].nombre = newName;
+                productos[productIndex].costo = newCost;
+                productos[productIndex].precioVenta = newPVP;
+                
+                // Actualizar la unidad de venta si el nombre ha cambiado
+                productos[productIndex].unit = getUnitFromProductName(newName);
+                
+                alertMessage(`Producto "${newName}" guardado.`, 'green');
+                
+                // Re-renderizar todo
+                renderizarTodo(); 
+            }
+        }
+
+        function confirmDelete(productId, productName) {
+            // Reemplazar alert/confirm con un mensaje en la consola y re-renderizado
+            console.warn(`Intento de eliminación: ${productName}. Producto ID: ${productId}`);
+
+            // Para simular la confirmación sin usar window.confirm/alert:
+            deleteProduct(productId);
+            alertMessage(`Producto "${productName}" eliminado.`, 'red');
+        }
+        
+        function deleteProduct(productId) {
+            productos = productos.filter(p => p.id !== productId);
+            renderizarTodo(); 
+        }
+
+        function addProduct() {
+            const newProduct = {
+                id: nextProductId++,
+                nombre: "Nuevo Producto (kg, L o unid)",
+                costo: 1.00,
+                precioVenta: 1.20,
+                unit: 'unid'
+            };
+            productos.push(newProduct);
+            renderizarTodo(); 
+            // Dar feedback
+            alertMessage(`Producto "${newProduct.nombre}" añadido. Edítelo.`, 'blue');
+
+            // Intenta desplazar la vista al nuevo producto (si es posible)
+            setTimeout(() => {
+                const newRow = document.getElementById(`row-${newProduct.id}`);
+                if (newRow) {
+                    newRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    document.getElementById(`name-${newProduct.id}`).focus();
+                }
+            }, 50);
+        }
+
+        function alertMessage(message, color) {
+            // Creamos un área de mensajes temporal en el contenedor de inventario
+            let msgBox = document.getElementById('inventory-msg');
+            if (!msgBox) {
+                msgBox = document.createElement('div');
+                msgBox.id = 'inventory-msg';
+                msgBox.className = 'fixed top-4 right-4 z-50 p-3 rounded-lg shadow-xl text-white font-semibold transition-opacity duration-300 opacity-0';
+                document.body.appendChild(msgBox);
+            }
+
+            const bgColor = {
+                green: 'bg-green-500',
+                red: 'bg-red-500',
+                blue: 'bg-blue-500'
+            }[color] || 'bg-gray-700';
+
+            msgBox.className = `fixed top-4 right-4 z-50 p-3 rounded-lg shadow-xl text-white font-semibold transition-opacity duration-300 ${bgColor}`;
+            msgBox.textContent = message;
+            
+            // Mostrar
+            setTimeout(() => { msgBox.style.opacity = '1'; }, 10);
+            
+            // Ocultar
+            setTimeout(() => { msgBox.style.opacity = '0'; }, 3000);
+            setTimeout(() => { msgBox.remove(); }, 3500);
+        }
+
+    </script>
+</body>
+</html>
