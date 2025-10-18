@@ -87,6 +87,9 @@
         lucideScript.src = "https://unpkg.com/lucide@latest";
         document.head.appendChild(lucideScript);
 
+        // --- CONFIGURACIÓN DE LA API ---
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx07_ofDPNTdeF1QpoMpqrMBfG9L7DzeNVMrZCdXC4PTzHff_JVP7USs6AlsDaU7Cm-/exec';
+
         // --- ESTADO GLOBAL SIMULADO ---
         let productos = []; 
         let ventasDiarias = [];
@@ -102,56 +105,76 @@
 
         /**
          * @description Convierte una cadena (entero, decimal o fracción) a un número flotante.
-         * Permite entradas como "1/2", "0.5", "1.5", "3/4", etc.
-         * * FIX: Se prioriza la detección de fracción (X/Y) para evitar que parseFloat 
-         * interprete mal entradas como "1/2" (que parseFloat leería como 1).
-         * * @param {string} inputString Cadena de entrada del campo de cantidad.
-         * @returns {number} El valor flotante, o NaN si la entrada es inválida.
          */
         function parseFractionToFloat(inputString) {
             if (!inputString) return NaN;
-            
-            // Eliminar espacios y reemplazar comas por puntos (por si acaso)
             const cleanedInput = inputString.trim().replace(',', '.');
-
-            // 1. Intentar como fracción (ej. "1/2", "3/4", "5/2")
             const fractionMatch = cleanedInput.match(/^(\d+)\/(\d+)$/);
             if (fractionMatch) {
                 const numerator = parseInt(fractionMatch[1], 10);
                 const denominator = parseInt(fractionMatch[2], 10);
-                
-                if (denominator !== 0) {
-                    return numerator / denominator;
-                }
+                if (denominator !== 0) return numerator / denominator;
             }
-            
-            // 2. Intentar como decimal o entero (solo si no es una fracción X/Y)
             const decimalValue = parseFloat(cleanedInput);
-            if (!isNaN(decimalValue)) {
-                return decimalValue;
-            }
-
+            if (!isNaN(decimalValue)) return decimalValue;
             return NaN; 
         }
 
         // Helper para determinar la unidad de venta a granel.
         function getUnitFromProductName(name) {
             name = name.toLowerCase();
-            // Unidades por peso (kilogramos)
             if (name.includes('1kg') || name.includes(' lenteja 1 kg') || name.includes('harina') || name.includes('azúcar') || name.includes('arroz')) return 'kg';
-            // Unidades por volumen (litros)
             if (name.includes('1l') || name.includes('(caja 1l)') || name.includes('aceite')) return 'L';
-            // Unidades individuales
             return 'unid'; 
         }
 
-        // --- DATOS INICIALES (PRODUCTOS ACTUALIZADOS CON UNIDADES) ---
+        // --- SINCRONIZACIÓN CON GOOGLE SHEETS ---
+
+        // Envía la lista completa de productos para sobrescribir la hoja de Inventario.
+        async function syncInventoryWithSheet() {
+            try {
+                const response = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Cambiado a no-cors para evitar errores de CORS con el script de Google
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8',
+                    },
+                    body: JSON.stringify({ action: 'syncInventory', payload: productos })
+                });
+                console.log('Sincronización de inventario iniciada.');
+                alertMessage('Inventario sincronizado con la nube.', 'blue');
+            } catch (error) {
+                console.error('Error al sincronizar el inventario:', error);
+                alertMessage('Error al sincronizar inventario.', 'red');
+            }
+        }
+
+        // Envía una única venta para añadirla a la hoja de Ventas.
+        async function addSaleToSheet(saleData) {
+            try {
+                const response = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Cambiado a no-cors
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8',
+                    },
+                    body: JSON.stringify({ action: 'addSale', payload: saleData })
+                });
+                console.log('Sincronización de venta iniciada.');
+            } catch (error) {
+                console.error('Error al añadir venta a la hoja:', error);
+                alertMessage('Error al guardar venta en la nube.', 'red');
+            }
+        }
+
+
+        // --- DATOS INICIALES Y LÓGICA DE LA APP ---
         function initializeProducts() {
             const initialData = [
                 { nombre: "Aceite vegetal Deleite 1L", costo: 7.50 },
                 { nombre: "Aceite vegetal Patrona 1L", costo: 8.00 },
                 { nombre: "Aceite vegetal Primor 1L", costo: 9.20 },
-                { nombre: "Arroz 1 kg", costo: 4.00 }, // Añadido arroz
+                { nombre: "Arroz 1 kg", costo: 4.00 },
                 { nombre: "Avena clásica 3 ositos (bolsa)", costo: 4.80 },
                 { nombre: "Avena en Hojuelas Quaker (caja)", costo: 6.50 },
                 { nombre: "Avena quinua 3 ositos (bolsa)", costo: 5.20 },
@@ -219,26 +242,36 @@
                     id: id,
                     nombre: p.nombre,
                     costo: p.costo,
-                    // Calcula el PVP con un margen del 20% sobre el costo por defecto
                     precioVenta: parseFloat((p.costo * 1.20).toFixed(2)),
-                    unit: getUnitFromProductName(p.nombre) // Añadido para manejo a granel
+                    unit: getUnitFromProductName(p.nombre)
                 };
             });
+            
+            // Sincronización inicial con la hoja de cálculo.
+            syncInventoryWithSheet();
         }
 
-        // --- INICIALIZACIÓN ---
+        // --- INICIALIZACIÓN Y CONTROL DE ACCESO ---
         document.addEventListener('DOMContentLoaded', () => {
-            initializeProducts();
-            renderizarTodo(); 
+            const appContainer = document.getElementById('app-container');
+            const password = prompt('Por favor, introduce la contraseña para acceder:');
 
-            // Una vez que el script de Lucide termine de cargar (asíncronamente), 
-            // nos aseguramos de que todos los iconos se creen.
-            lucideScript.onload = safeCreateIcons;
+            if (password === 'ruth') {
+                appContainer.style.display = 'block';
+                initializeProducts(); // Carga los productos locales y lanza la sincronización
+                renderizarTodo();
+                lucideScript.onload = safeCreateIcons;
+            } else {
+                document.body.innerHTML = `
+                    <div class="flex items-center justify-center h-screen">
+                        <div class="text-center p-8 bg-white rounded-lg shadow-lg">
+                            <h1 class="text-2xl font-bold text-red-600">Acceso Denegado</h1>
+                            <p class="text-gray-700 mt-2">La contraseña es incorrecta.</p>
+                        </div>
+                    </div>
+                `;
+            }
         });
-
-        // ------------------------------------------------------------------
-        // --- CONTROL DE PESTAÑAS (TABS) ---
-        // ------------------------------------------------------------------
 
         function switchTab(tabName) {
             const tabs = ['registro', 'inventario'];
@@ -249,165 +282,104 @@
                 document.getElementById(`tab-${tab}`).classList.add('text-gray-500', 'hover:bg-gray-100');
             });
 
-            // Activar la pestaña seleccionada
             document.getElementById(`content-${tabName}`).classList.remove('hidden');
             document.getElementById(`tab-${tabName}`).classList.add('active', 'bg-white', 'text-blue-600', 'shadow-sm');
             document.getElementById(`tab-${tabName}`).classList.remove('text-gray-500', 'hover:bg-gray-100');
             
-            // Re-renderizar el contenido de la pestaña activa
             renderizarTodo(); 
-            safeCreateIcons(); // Crea iconos en el nuevo contenido
+            safeCreateIcons();
         }
-
-        // ------------------------------------------------------------------
-        // --- CÁLCULOS GLOBALES ---
-        // ------------------------------------------------------------------
 
         function calcularTotales() {
             let totalVenta = 0;
             let totalGanancia = 0;
-
             ventasDiarias.forEach(venta => {
                 totalVenta += venta.precioTotal;
                 const gananciaUnitaria = venta.precioVenta - venta.costo;
-                // La ganancia total de la venta es la ganancia unitaria por la cantidad vendida
                 totalGanancia += gananciaUnitaria * venta.cantidad; 
             });
-
-            return {
-                totalVenta: totalVenta,
-                totalGanancia: totalGanancia
-            };
+            return { totalVenta: totalVenta, totalGanancia: totalGanancia };
         }
-
-        // ------------------------------------------------------------------
-        // --- RENDERIZADO GLOBAL ---
-        // ------------------------------------------------------------------
 
         function renderizarTodo() {
             const currentTabElement = document.querySelector('.tab-button.active');
             let currentTab = 'registro'; 
-
             if (currentTabElement) {
                 currentTab = currentTabElement.id.split('-')[1];
             }
-            
             const totales = calcularTotales();
             renderDashboard(totales.totalVenta, totales.totalGanancia);
-            
             if (currentTab === 'registro') renderRegistroVentas();
             if (currentTab === 'inventario') renderGestionInventario();
-            
             safeCreateIcons();
         }
 
-        // ------------------------------------------------------------------
-        // --- RENDERIZADO DEL DASHBOARD (LÓGICA FINAL) ---
-        // ------------------------------------------------------------------
-
         function renderDashboard(ventaReal, gananciaNeta) {
             const dashboardContainer = document.getElementById('dashboard');
-            
             const diferencia = gananciaNeta - GANANCIA_MINIMA;
             const cumplioMeta = gananciaNeta >= GANANCIA_MINIMA;
-            
             const colorFondo = cumplioMeta ? 'bg-blue-600' : 'bg-red-500';
             const icono = cumplioMeta ? 'trending-up' : 'trending-down';
-            const mensajeStatus = cumplioMeta 
-                ? '¡Felicidades! Meta de Ganancia Mínima cumplida.'
-                : 'ALERTA: Ganancia Mínima no alcanzada.';
-            
-            const diferenciaTexto = cumplioMeta 
-                ? `¡Sobrante de S/ ${diferencia.toFixed(2)}!`
-                : `Faltan S/ ${Math.abs(diferencia).toFixed(2)} para los ${GANANCIA_MINIMA.toFixed(2)}.`;
+            const mensajeStatus = cumplioMeta ? '¡Felicidades! Meta de Ganancia Mínima cumplida.' : 'ALERTA: Ganancia Mínima no alcanzada.';
+            const diferenciaTexto = cumplioMeta ? `¡Sobrante de S/ ${diferencia.toFixed(2)}!` : `Faltan S/ ${Math.abs(diferencia).toFixed(2)} para los ${GANANCIA_MINIMA.toFixed(2)}.`;
 
             const tarjetaHTML = `
                 <div id="main-card" class="${colorFondo} text-white p-6 rounded-xl card-shadow transition-all duration-300 card-update-pulse">
-                    
                     <div class="flex items-start justify-between">
                         <h2 class="text-lg font-semibold opacity-80 mb-1">VENTA REAL ACUMULADA</h2>
                         <i data-lucide="${icono}" class="w-6 h-6"></i>
                     </div>
-
-                    <p class="text-5xl font-extrabold mb-4">
-                        S/ ${ventaReal.toFixed(2)}
-                    </p>
-
+                    <p class="text-5xl font-extrabold mb-4">S/ ${ventaReal.toFixed(2)}</p>
                     <div class="space-y-2 text-sm pt-4 border-t border-white border-opacity-30">
-                        
                         <div class="flex justify-between">
                             <span class="opacity-70">Meta Ganancia Mínima:</span>
                             <span class="font-bold">S/ ${GANANCIA_MINIMA.toFixed(2)}</span>
                         </div>
-
                         <div class="flex justify-between text-lg font-bold">
                             <span>GANANCIA NETA REAL:</span>
                             <span class="text-white">${gananciaNeta.toFixed(2)}</span>
                         </div>
-
                         <div class="flex justify-between font-semibold pt-2">
                             <span>Estado de la Meta:</span>
                             <span class="font-extrabold ${cumplioMeta ? 'text-green-200' : 'text-red-200'}">${diferenciaTexto}</span>
                         </div>
-
                     </div>
                 </div>
-
                 <div class="text-center mt-4 p-3 rounded-lg bg-white border border-gray-200 text-gray-700 font-semibold card-shadow">
                     ${mensajeStatus}
                 </div>
             `;
-            
             dashboardContainer.innerHTML = tarjetaHTML;
             safeCreateIcons();
-            
-            // Trigger animation
             const mainCard = document.getElementById('main-card');
             mainCard.classList.remove('card-update-pulse');
             void mainCard.offsetWidth; 
             mainCard.classList.add('card-update-pulse');
         }
 
-        // ------------------------------------------------------------------
-        // --- PESTAÑA 1: REGISTRO DE VENTAS ---
-        // ------------------------------------------------------------------
-        
-        // Función para actualizar la etiqueta de Cantidad según la unidad del producto
         function updateQuantityLabel() {
             const select = document.getElementById('regSelectProducto');
             const label = document.getElementById('regCantidadLabel');
             const cantidadInput = document.getElementById('regCantidadVendida');
-
             if (!select || !label || !cantidadInput) return;
-
             const selectedOption = select.options[select.selectedIndex];
-            
             let unitText = 'Unidades';
-            
             if (selectedOption && selectedOption.value) {
                 const productoSeleccionado = productos.find(p => p.id === parseInt(selectedOption.value));
-                
                 if (productoSeleccionado) {
                     const unit = productoSeleccionado.unit;
-                    if (unit === 'kg') {
-                        unitText = 'Kilogramos (Ej: 0.5 o 1/2)';
-                    } else if (unit === 'L') {
-                        unitText = 'Litros (Ej: 0.25 o 1/4)';
-                    }
+                    if (unit === 'kg') unitText = 'Kilogramos (Ej: 0.5 o 1/2)';
+                    else if (unit === 'L') unitText = 'Litros (Ej: 0.25 o 1/4)';
                 }
             }
-            
             label.textContent = `Cantidad (${unitText})`;
         }
-
 
         function renderRegistroVentas() {
             const container = document.getElementById('content-registro');
             if (container.classList.contains('hidden')) return;
-
             const formHTML = `
                 <h2 class="text-2xl font-semibold mb-4 text-gray-700">Registrar Venta</h2>
-                
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                     <div class="col-span-2 md:col-span-1">
                         <label for="regSelectProducto" class="block text-sm font-medium text-gray-600">Producto</label>
@@ -416,19 +388,15 @@
                             ${productos.map(p => `<option value="${p.id}" data-costo="${p.costo}" data-pvp="${p.precioVenta}">${p.nombre}</option>`).join('')}
                         </select>
                     </div>
-
                     <div>
-                        <!-- CAMPO MODIFICADO: Ahora es tipo texto para aceptar fracciones y decimales -->
                         <label for="regCantidadVendida" class="block text-sm font-medium text-gray-600" id="regCantidadLabel">Cantidad (unid)</label>
                         <input type="text" id="regCantidadVendida" placeholder="Ej: 0.5 o 1/2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" value="1" oninput="updateSalePrice()">
                     </div>
-                    
                     <div>
                         <label for="regPrecioVenta" class="block text-sm font-medium text-gray-600">Precio Total (S/)</label>
                         <input type="number" id="regPrecioVenta" placeholder="Total" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border font-bold" min="0" step="0.01">
                         <p id="precio-unitario-hint" class="text-xs text-gray-500 mt-1">PVP unitario sugerido: S/ 0.00</p>
                     </div>
-
                     <div>
                         <label for="regMetodoPago" class="block text-sm font-medium text-gray-600">Método de Pago</label>
                         <select id="regMetodoPago" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
@@ -437,21 +405,14 @@
                         </select>
                     </div>
                 </div>
-
-                <button onclick="registrarVenta()" class="w-full md:w-auto px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors">
-                    Confirmar Venta
-                </button>
+                <button onclick="registrarVenta()" class="w-full md:w-auto px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors">Confirmar Venta</button>
                 <p id="msg-venta" class="mt-3 text-sm text-center text-gray-500"></p>
-
-                <!-- LISTA DE VENTAS REGISTRADAS -->
                 <h3 class="text-xl font-semibold mt-8 mb-4 border-t pt-4">Ventas del Día Registradas</h3>
-                <div id="ventas-list" class="space-y-3">
-                    <!-- Lista de ventas va aquí -->
-                </div>
+                <div id="ventas-list" class="space-y-3"></div>
             `;
             container.innerHTML = formHTML;
-            updateSalePrice(); // Initial calculation
-            updateQuantityLabel(); // Set initial label
+            updateSalePrice();
+            updateQuantityLabel();
             renderVentasList();
         }
 
@@ -460,28 +421,19 @@
             const cantidadInput = document.getElementById('regCantidadVendida');
             const precioTotalInput = document.getElementById('regPrecioVenta');
             const hint = document.getElementById('precio-unitario-hint');
-
             if (!select || !cantidadInput || !precioTotalInput || !hint) return;
-
             const selectedOption = select.options[select.selectedIndex];
-            
             let pvpUnitario = 0;
             if (selectedOption && selectedOption.value) {
                 const productoSeleccionado = productos.find(p => p.id === parseInt(selectedOption.value));
-                if (productoSeleccionado) {
-                    pvpUnitario = productoSeleccionado.precioVenta;
-                }
+                if (productoSeleccionado) pvpUnitario = productoSeleccionado.precioVenta;
             }
-
             if (!selectedOption || !selectedOption.value || pvpUnitario === 0) {
                 precioTotalInput.value = '';
                 hint.textContent = 'PVP unitario sugerido: S/ 0.00';
                 return;
             }
-
-            // APLICAR LA CONVERSIÓN DE FRACCIONES
             const cantidadDecimal = parseFractionToFloat(cantidadInput.value);
-
             if (isNaN(cantidadDecimal) || cantidadDecimal <= 0) {
                 precioTotalInput.value = '';
                 hint.textContent = 'Error en Cantidad. Use 1, 0.5, 1/2, etc.';
@@ -489,7 +441,6 @@
                 return;
             }
             precioTotalInput.classList.remove('border-red-500');
-            
             const totalCalculado = (pvpUnitario * cantidadDecimal).toFixed(2);
             precioTotalInput.value = totalCalculado;
             hint.textContent = `PVP unitario sugerido: S/ ${pvpUnitario.toFixed(2)} por unidad/kg/L`;
@@ -501,14 +452,10 @@
             const precioTotalInput = document.getElementById('regPrecioVenta');
             const pagoInput = document.getElementById('regMetodoPago');
             const msg = document.getElementById('msg-venta');
-            
             const productoId = parseInt(select.value);
-            
-            // CONVERSIÓN CRÍTICA: Obtener el valor decimal real
             const cantidadDecimal = parseFractionToFloat(cantidadInput.value); 
             const precioTotal = parseFloat(precioTotalInput.value);
             const metodoPago = pagoInput.value;
-
             const productoVendido = productos.find(p => p.id === productoId);
 
             if (!productoVendido || isNaN(cantidadDecimal) || cantidadDecimal <= 0 || isNaN(precioTotal) || precioTotal <= 0) {
@@ -517,21 +464,21 @@
                 return;
             }
             
-            // Si la conversión fue exitosa, usar el valor decimal para el cálculo de la venta
             const costoUnitario = productoVendido.costo;
             const precioVentaUnitario = precioTotal / cantidadDecimal; 
 
             const nuevaVenta = {
                 nombre: productoVendido.nombre,
                 costo: costoUnitario,
-                precioVenta: precioVentaUnitario, // Precio unitario real (por kg/L/unid)
-                cantidad: cantidadDecimal, // Cantidad en formato decimal
+                precioVenta: precioVentaUnitario,
+                cantidad: cantidadDecimal,
                 precioTotal: precioTotal,
                 metodoPago: metodoPago,
                 fecha: new Date().toLocaleTimeString('es-PE')
             };
 
             ventasDiarias.push(nuevaVenta);
+            addSaleToSheet(nuevaVenta); // Enviar a Google Sheets en segundo plano
             
             cantidadInput.value = '1';
             select.value = ''; 
@@ -541,28 +488,22 @@
             msg.textContent = `Venta registrada. Ganancia: S/ ${gananciaVenta.toFixed(2)} (${metodoPago}).`;
             msg.className = 'mt-3 text-sm text-center text-green-500 font-semibold';
             
-            updateQuantityLabel(); // Resetear etiqueta
+            updateQuantityLabel();
             renderizarTodo();
         }
 
         function renderVentasList() {
             const listContainer = document.getElementById('ventas-list');
-            
             if (!listContainer) return; 
-
             if (ventasDiarias.length === 0) {
                 listContainer.innerHTML = '<p class="text-gray-500 text-sm">Aún no hay ventas registradas.</p>';
                 return;
             }
-
             const listHTML = ventasDiarias.slice().reverse().map((venta) => { 
                 const gananciaUnitaria = venta.precioVenta - venta.costo;
                 const gananciaTotal = gananciaUnitaria * venta.cantidad;
                 const pagoColor = venta.metodoPago === 'Yape' ? 'bg-indigo-100 text-indigo-800' : 'bg-green-100 text-green-800';
-                
-                // Muestra la cantidad con 2 decimales, eliminando '.00' si es un número entero.
                 const displayCantidad = venta.cantidad.toFixed(2).replace(/\.00$/, ''); 
-
                 return `
                     <div class="flex flex-wrap md:flex-row justify-between items-center p-3 bg-gray-50 border border-gray-200 rounded-lg">
                         <div class="font-medium text-gray-800 w-full md:w-1/2 mb-2 md:mb-0">
@@ -577,26 +518,18 @@
                     </div>
                 `;
             }).join('');
-
             listContainer.innerHTML = listHTML;
         }
-
-        // ------------------------------------------------------------------
-        // --- PESTAÑA 2: GESTIÓN DE INVENTARIO (SIN CAMBIOS) ---
-        // ------------------------------------------------------------------
 
         function renderGestionInventario() {
             const container = document.getElementById('content-inventario');
             if (container.classList.contains('hidden')) return;
-
             const inventoryHTML = `
                 <h2 class="text-2xl font-semibold mb-4 text-gray-700">Lista y Edición de Productos</h2>
-                <p class="text-sm text-gray-500 mb-6">Edite los campos directamente. El PVP sugerido (20% margen) solo es una referencia. Use el botón "Guardar" para registrar los cambios en Costo y PVP Real.</p>
-                
+                <p class="text-sm text-gray-500 mb-6">Los cambios se guardan en la nube automáticamente al hacer clic en "Guardar".</p>
                 <button onclick="addProduct()" class="mb-4 px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors shadow flex items-center">
                     <i data-lucide="plus" class="w-5 h-5 mr-2"></i> Añadir Nuevo Producto
                 </button>
-
                 <div class="overflow-x-auto rounded-lg border">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-100">
@@ -609,49 +542,32 @@
                                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Acción</th>
                             </tr>
                         </thead>
-                        <tbody id="inventory-table-body" class="bg-white divide-y divide-gray-200">
-                            <!-- Productos van aquí -->
-                        </tbody>
+                        <tbody id="inventory-table-body" class="bg-white divide-y divide-gray-200"></tbody>
                     </table>
                 </div>
             `;
             container.innerHTML = inventoryHTML;
             renderInventoryTable();
-            safeCreateIcons(); // Renderiza iconos del botón Añadir
+            safeCreateIcons();
         }
 
         function renderInventoryTable() {
             const tbody = document.getElementById('inventory-table-body');
             if (!tbody) return;
-
             tbody.innerHTML = productos.map(p => {
                 const margenActual = p.precioVenta - p.costo;
                 const pvpSugerido = (p.costo * 1.20).toFixed(2);
                 const margenColor = margenActual > 0 ? 'text-green-600' : (margenActual < 0 ? 'text-red-500' : 'text-gray-500');
-
                 return `
                     <tr id="row-${p.id}" class="hover:bg-gray-50 transition-colors">
-                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
-                            <input type="text" id="name-${p.id}" value="${p.nombre}" class="input-inline" />
-                        </td>
-                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                            <input type="number" id="cost-${p.id}" value="${p.costo.toFixed(2)}" class="input-inline w-20" step="0.01" min="0">
-                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900"><input type="text" id="name-${p.id}" value="${p.nombre}" class="input-inline" /></td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500"><input type="number" id="cost-${p.id}" value="${p.costo.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td>
                         <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${pvpSugerido}</td>
-                        <td class="px-3 py-2 whitespace-nowrap">
-                            <input type="number" id="pvp-${p.id}" value="${p.precioVenta.toFixed(2)}" 
-                                class="input-inline w-20" step="0.01" min="0">
-                        </td>
-                        <td class="px-3 py-2 whitespace-nowrap text-sm font-bold ${margenColor}">
-                            S/ ${margenActual.toFixed(2)}
-                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap"><input type="number" id="pvp-${p.id}" value="${p.precioVenta.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm font-bold ${margenColor}">S/ ${margenActual.toFixed(2)}</td>
                         <td class="px-3 py-2 whitespace-nowrap text-sm space-x-2">
-                            <button onclick="saveProductChanges(${p.id})" class="px-2 py-1 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors text-xs shadow">
-                                Guardar
-                            </button>
-                            <button onclick="confirmDelete(${p.id}, '${p.nombre}')" class="px-2 py-1 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors text-xs shadow">
-                                Eliminar
-                            </button>
+                            <button onclick="saveProductChanges(${p.id})" class="px-2 py-1 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors text-xs shadow">Guardar</button>
+                            <button onclick="confirmDelete(${p.id}, '${p.nombre}')" class="px-2 py-1 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors text-xs shadow">Eliminar</button>
                         </td>
                     </tr>
                 `;
@@ -662,57 +578,35 @@
             const nameInput = document.getElementById(`name-${productId}`);
             const costInput = document.getElementById(`cost-${productId}`);
             const pvpInput = document.getElementById(`pvp-${productId}`);
-
             const newName = nameInput.value.trim();
             const newCost = parseFloat(costInput.value);
             const newPVP = parseFloat(pvpInput.value);
 
-            if (newName === "") {
-                nameInput.focus();
-                alertMessage('El nombre del producto no puede estar vacío.', 'red');
-                return;
-            }
-
-            if (isNaN(newCost) || newCost < 0) {
-                costInput.focus();
-                alertMessage('El Costo debe ser un número positivo.', 'red');
-                return;
-            }
-
-            if (isNaN(newPVP) || newPVP < 0) {
-                pvpInput.focus();
-                alertMessage('El PVP Real debe ser un número positivo.', 'red');
-                return;
-            }
+            if (newName === "") { alertMessage('El nombre del producto no puede estar vacío.', 'red'); return; }
+            if (isNaN(newCost) || newCost < 0) { alertMessage('El Costo debe ser un número positivo.', 'red'); return; }
+            if (isNaN(newPVP) || newPVP < 0) { alertMessage('El PVP Real debe ser un número positivo.', 'red'); return; }
 
             const productIndex = productos.findIndex(p => p.id === productId);
             if (productIndex !== -1) {
                 productos[productIndex].nombre = newName;
                 productos[productIndex].costo = newCost;
                 productos[productIndex].precioVenta = newPVP;
-                
-                // Actualizar la unidad de venta si el nombre ha cambiado
                 productos[productIndex].unit = getUnitFromProductName(newName);
-                
-                alertMessage(`Producto "${newName}" guardado.`, 'green');
-                
-                // Re-renderizar todo
-                renderizarTodo(); 
+                renderizarTodo();
+                syncInventoryWithSheet(); // Sincronizar con la nube
             }
         }
 
         function confirmDelete(productId, productName) {
-            // Reemplazar alert/confirm con un mensaje en la consola y re-renderizado
-            console.warn(`Intento de eliminación: ${productName}. Producto ID: ${productId}`);
-
-            // Para simular la confirmación sin usar window.confirm/alert:
-            deleteProduct(productId);
-            alertMessage(`Producto "${productName}" eliminado.`, 'red');
+            if (confirm(`¿Estás seguro de que quieres eliminar "${productName}"?`)) {
+                deleteProduct(productId);
+            }
         }
         
         function deleteProduct(productId) {
             productos = productos.filter(p => p.id !== productId);
-            renderizarTodo(); 
+            renderizarTodo();
+            syncInventoryWithSheet(); // Sincronizar con la nube
         }
 
         function addProduct() {
@@ -724,11 +618,8 @@
                 unit: 'unid'
             };
             productos.push(newProduct);
-            renderizarTodo(); 
-            // Dar feedback
-            alertMessage(`Producto "${newProduct.nombre}" añadido. Edítelo.`, 'blue');
-
-            // Intenta desplazar la vista al nuevo producto (si es posible)
+            renderizarTodo();
+            syncInventoryWithSheet(); // Sincronizar con la nube
             setTimeout(() => {
                 const newRow = document.getElementById(`row-${newProduct.id}`);
                 if (newRow) {
@@ -739,30 +630,17 @@
         }
 
         function alertMessage(message, color) {
-            // Creamos un área de mensajes temporal en el contenedor de inventario
             let msgBox = document.getElementById('inventory-msg');
             if (!msgBox) {
                 msgBox = document.createElement('div');
                 msgBox.id = 'inventory-msg';
-                msgBox.className = 'fixed top-4 right-4 z-50 p-3 rounded-lg shadow-xl text-white font-semibold transition-opacity duration-300 opacity-0';
                 document.body.appendChild(msgBox);
             }
-
-            const bgColor = {
-                green: 'bg-green-500',
-                red: 'bg-red-500',
-                blue: 'bg-blue-500'
-            }[color] || 'bg-gray-700';
-
+            const bgColor = { green: 'bg-green-500', red: 'bg-red-500', blue: 'bg-blue-500' }[color] || 'bg-gray-700';
             msgBox.className = `fixed top-4 right-4 z-50 p-3 rounded-lg shadow-xl text-white font-semibold transition-opacity duration-300 ${bgColor}`;
             msgBox.textContent = message;
-            
-            // Mostrar
-            setTimeout(() => { msgBox.style.opacity = '1'; }, 10);
-            
-            // Ocultar
+            msgBox.style.opacity = '1';
             setTimeout(() => { msgBox.style.opacity = '0'; }, 3000);
-            setTimeout(() => { msgBox.remove(); }, 3500);
         }
 
     </script>
