@@ -236,7 +236,7 @@
             const passwordInput = document.getElementById('password-input');
             const password = passwordInput.value;
             // La contrasena sera reemplazada por el secreto de GitHub en el proceso de build
-            if (password === "__APP_PASSWORD__") {
+            if (password === "perica") {
                 localStorage.setItem('bodegaAuth', 'true');
                 document.getElementById('password-prompt').classList.add('hidden');
                 loadApplication();
