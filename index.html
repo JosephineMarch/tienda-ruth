@@ -90,25 +90,22 @@
         // --- CONFIGURACIÓN DE LA API ---
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx07_ofDPNTdeF1QpoMpqrMBfG9L7DzeNVMrZCdXC4PTzHff_JVP7USs6AlsDaU7Cm-/exec';
 
-        // --- ESTADO GLOBAL SIMULADO ---
-        let productos = []; 
-        let ventasDiarias = [];
-        const GANANCIA_MINIMA = 60.00; // Meta de Ganancia Fija
-        let nextProductId = 1; // Para IDs únicos al añadir
+        // --- ESTADO GLOBAL ---
+        let productos = [];
+        let ventasDiarias = []; // Contiene las ventas del día seleccionado
+        let selectedDate = new Date().toISOString().split('T')[0]; // Fecha seleccionada en el visor
+        const GANANCIA_MINIMA = 60.00;
+        let nextProductId = 1;
 
-        // Función de seguridad para crear iconos solo si la librería Lucide está cargada
         function safeCreateIcons() {
             if (typeof lucide !== 'undefined' && lucide.createIcons) {
                 lucide.createIcons();
             }
         }
 
-        /**
-         * @description Convierte una cadena (entero, decimal o fracción) a un número flotante.
-         */
         function parseFractionToFloat(inputString) {
             if (!inputString) return NaN;
-            const cleanedInput = inputString.trim().replace(',', '.');
+            const cleanedInput = String(inputString).trim().replace(',', '.');
             const fractionMatch = cleanedInput.match(/^(\d+)\/(\d+)$/);
             if (fractionMatch) {
                 const numerator = parseInt(fractionMatch[1], 10);
@@ -116,30 +113,81 @@
                 if (denominator !== 0) return numerator / denominator;
             }
             const decimalValue = parseFloat(cleanedInput);
-            if (!isNaN(decimalValue)) return decimalValue;
-            return NaN; 
+            return !isNaN(decimalValue) ? decimalValue : NaN;
         }
 
-        // Helper para determinar la unidad de venta a granel.
         function getUnitFromProductName(name) {
             name = name.toLowerCase();
-            if (name.includes('1kg') || name.includes(' lenteja 1 kg') || name.includes('harina') || name.includes('azúcar') || name.includes('arroz')) return 'kg';
-            if (name.includes('1l') || name.includes('(caja 1l)') || name.includes('aceite')) return 'L';
-            return 'unid'; 
+            if (name.includes('kg') || name.includes(' lenteja') || name.includes('harina') || name.includes('azúcar') || name.includes('arroz')) return 'kg';
+            if (name.includes('1l') || name.includes('litro') || name.includes('aceite')) return 'L';
+            return 'unid';
         }
 
         // --- SINCRONIZACIÓN CON GOOGLE SHEETS ---
 
-        // Envía la lista completa de productos para sobrescribir la hoja de Inventario.
-        async function syncInventoryWithSheet() {
+        async function fetchSalesForDate(dateString) {
+            const sheetName = dateString;
+            const url = `${APPS_SCRIPT_URL}?action=getSales&sheetName=${sheetName}&t=${new Date().getTime()}`;
+            
             try {
-                const response = await fetch(APPS_SCRIPT_URL, {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Error del servidor: ${response.statusText} (Código: ${response.status})`);
+                }
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(`Error del script: ${data.error}`);
+                }
+
+                if (!Array.isArray(data)) {
+                    console.error("La respuesta no es un array:", data);
+                    throw new Error("La respuesta del servidor no es un array de ventas válido.");
+                }
+
+                return data.map(venta => {
+                    const cleanVenta = {};
+                    for (const key in venta) {
+                        cleanVenta[key.trim()] = venta[key];
+                    }
+                    return {
+                        ...cleanVenta,
+                        'Cantidad': parseFractionToFloat(cleanVenta['Cantidad']),
+                        'Costo Unitario (S/)': parseFloat(cleanVenta['Costo Unitario (S/)'] || 0),
+                        'PVP Unitario (S/)': parseFloat(cleanVenta['PVP Unitario (S/)'] || 0),
+                        'Precio Total (S/)': parseFloat(cleanVenta['Precio Total (S/)'] || 0),
+                        'Ganancia (S/)': parseFloat(cleanVenta['Ganancia (S/)'] || 0)
+                    };
+                });
+            } catch (error) {
+                console.error(`Error al cargar las ventas para ${dateString}:`, error);
+                alertMessage(`No se pudieron cargar las ventas para ${dateString}.`, 'red');
+                return []; // Devuelve un array vacío en caso de error
+            }
+        }
+
+        async function syncInventoryWithSheet() {
+            const inventoryPayload = productos.map(p => {
+                const costo = p['Costo (S/)'];
+                const pvpReal = p['PVP Real (S/)'];
+                const pvpSugerido = (costo * 1.20);
+                const margenActual = pvpReal - costo;
+                return {
+                    'Producto': p['Producto'],
+                    'Costo (S/)': costo,
+                    'PVP Sugerido (S/)': pvpSugerido,
+                    'PVP Real (S/)': pvpReal,
+                    'Margen Actual (S/)': margenActual,
+                    'Unidad': p['Unidad']
+                };
+            });
+
+            try {
+                await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
-                    mode: 'no-cors', // Cambiado a no-cors para evitar errores de CORS con el script de Google
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8',
-                    },
-                    body: JSON.stringify({ action: 'syncInventory', payload: productos })
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'syncInventory', payload: inventoryPayload })
                 });
                 console.log('Sincronización de inventario iniciada.');
                 alertMessage('Inventario sincronizado con la nube.', 'blue');
@@ -149,16 +197,14 @@
             }
         }
 
-        // Envía una única venta para añadirla a la hoja de Ventas.
         async function addSaleToSheet(saleData) {
+            const sheetName = new Date().toISOString().split('T')[0]; // Siempre registra en la hoja de hoy
             try {
-                const response = await fetch(APPS_SCRIPT_URL, {
+                await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
-                    mode: 'no-cors', // Cambiado a no-cors
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8',
-                    },
-                    body: JSON.stringify({ action: 'addSale', payload: saleData })
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'addSale', sheetName: sheetName, payload: saleData })
                 });
                 console.log('Sincronización de venta iniciada.');
             } catch (error) {
@@ -166,7 +212,6 @@
                 alertMessage('Error al guardar venta en la nube.', 'red');
             }
         }
-
 
         // --- DATOS INICIALES Y LÓGICA DE LA APP ---
         function initializeProducts() {
@@ -235,30 +280,26 @@
                 { nombre: "Sopas/Condimentos Sibarita (o similar)", costo: 1.20 },
                 { nombre: "Vainilla Katita", costo: 3.00 },
             ];
-
-            productos = initialData.map((p) => {
-                const id = nextProductId++;
-                return {
-                    id: id,
-                    nombre: p.nombre,
-                    costo: p.costo,
-                    precioVenta: parseFloat((p.costo * 1.20).toFixed(2)),
-                    unit: getUnitFromProductName(p.nombre)
-                };
-            });
-            
-            // Sincronización inicial con la hoja de cálculo.
+            productos = initialData.map((p, i) => ({
+                id: i + 1,
+                'Producto': p.nombre,
+                'Costo (S/)': p.costo,
+                'PVP Real (S/)': parseFloat((p.costo * 1.20).toFixed(2)),
+                'Unidad': getUnitFromProductName(p.nombre)
+            }));
+            nextProductId = productos.length + 1;
             syncInventoryWithSheet();
         }
 
         // --- INICIALIZACIÓN Y CONTROL DE ACCESO ---
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             const appContainer = document.getElementById('app-container');
             const password = prompt('Por favor, introduce la contraseña para acceder:');
 
             if (password === 'ruth') {
                 appContainer.style.display = 'block';
-                initializeProducts(); // Carga los productos locales y lanza la sincronización
+                initializeProducts();
+                ventasDiarias = await fetchSalesForDate(selectedDate);
                 renderizarTodo();
                 lucideScript.onload = safeCreateIcons;
             } else {
@@ -273,40 +314,33 @@
             }
         });
 
+        async function handleDateChange(event) {
+            selectedDate = event.target.value;
+            ventasDiarias = await fetchSalesForDate(selectedDate);
+            renderizarTodo();
+        }
+
         function switchTab(tabName) {
-            const tabs = ['registro', 'inventario'];
-            tabs.forEach(tab => {
+            ['registro', 'inventario'].forEach(tab => {
                 document.getElementById(`content-${tab}`).classList.add('hidden');
                 document.getElementById(`tab-${tab}`).classList.remove('active', 'bg-white', 'text-blue-600', 'shadow-sm');
-                document.getElementById(`tab-${tab}`).classList.remove('text-blue-600');
                 document.getElementById(`tab-${tab}`).classList.add('text-gray-500', 'hover:bg-gray-100');
             });
-
             document.getElementById(`content-${tabName}`).classList.remove('hidden');
             document.getElementById(`tab-${tabName}`).classList.add('active', 'bg-white', 'text-blue-600', 'shadow-sm');
-            document.getElementById(`tab-${tabName}`).classList.remove('text-gray-500', 'hover:bg-gray-100');
-            
-            renderizarTodo(); 
+            renderizarTodo();
             safeCreateIcons();
         }
 
         function calcularTotales() {
-            let totalVenta = 0;
-            let totalGanancia = 0;
-            ventasDiarias.forEach(venta => {
-                totalVenta += venta.precioTotal;
-                const gananciaUnitaria = venta.precioVenta - venta.costo;
-                totalGanancia += gananciaUnitaria * venta.cantidad; 
-            });
-            return { totalVenta: totalVenta, totalGanancia: totalGanancia };
+            const totalVenta = ventasDiarias.reduce((sum, venta) => sum + (venta['Precio Total (S/)'] || 0), 0);
+            const totalGanancia = ventasDiarias.reduce((sum, venta) => sum + (venta['Ganancia (S/)'] || 0), 0);
+            return { totalVenta, totalGanancia };
         }
 
         function renderizarTodo() {
             const currentTabElement = document.querySelector('.tab-button.active');
-            let currentTab = 'registro'; 
-            if (currentTabElement) {
-                currentTab = currentTabElement.id.split('-')[1];
-            }
+            const currentTab = currentTabElement ? currentTabElement.id.split('-')[1] : 'registro';
             const totales = calcularTotales();
             renderDashboard(totales.totalVenta, totales.totalGanancia);
             if (currentTab === 'registro') renderRegistroVentas();
@@ -331,45 +365,32 @@
                     </div>
                     <p class="text-5xl font-extrabold mb-4">S/ ${ventaReal.toFixed(2)}</p>
                     <div class="space-y-2 text-sm pt-4 border-t border-white border-opacity-30">
-                        <div class="flex justify-between">
-                            <span class="opacity-70">Meta Ganancia Mínima:</span>
-                            <span class="font-bold">S/ ${GANANCIA_MINIMA.toFixed(2)}</span>
-                        </div>
-                        <div class="flex justify-between text-lg font-bold">
-                            <span>GANANCIA NETA REAL:</span>
-                            <span class="text-white">${gananciaNeta.toFixed(2)}</span>
-                        </div>
-                        <div class="flex justify-between font-semibold pt-2">
-                            <span>Estado de la Meta:</span>
-                            <span class="font-extrabold ${cumplioMeta ? 'text-green-200' : 'text-red-200'}">${diferenciaTexto}</span>
-                        </div>
+                        <div class="flex justify-between"><span class="opacity-70">Meta Ganancia Mínima:</span><span class="font-bold">S/ ${GANANCIA_MINIMA.toFixed(2)}</span></div>
+                        <div class="flex justify-between text-lg font-bold"><span>GANANCIA NETA REAL:</span><span>${gananciaNeta.toFixed(2)}</span></div>
+                        <div class="flex justify-between font-semibold pt-2"><span>Estado de la Meta:</span><span class="font-extrabold ${cumplioMeta ? 'text-green-200' : 'text-red-200'}">${diferenciaTexto}</span></div>
                     </div>
                 </div>
-                <div class="text-center mt-4 p-3 rounded-lg bg-white border border-gray-200 text-gray-700 font-semibold card-shadow">
-                    ${mensajeStatus}
-                </div>
+                <div class="text-center mt-4 p-3 rounded-lg bg-white border border-gray-200 text-gray-700 font-semibold card-shadow">${mensajeStatus}</div>
             `;
             dashboardContainer.innerHTML = tarjetaHTML;
             safeCreateIcons();
             const mainCard = document.getElementById('main-card');
             mainCard.classList.remove('card-update-pulse');
-            void mainCard.offsetWidth; 
+            void mainCard.offsetWidth;
             mainCard.classList.add('card-update-pulse');
         }
 
         function updateQuantityLabel() {
             const select = document.getElementById('regSelectProducto');
             const label = document.getElementById('regCantidadLabel');
-            const cantidadInput = document.getElementById('regCantidadVendida');
-            if (!select || !label || !cantidadInput) return;
+            if (!select || !label) return;
             const selectedOption = select.options[select.selectedIndex];
             let unitText = 'Unidades';
             if (selectedOption && selectedOption.value) {
-                const productoSeleccionado = productos.find(p => p.id === parseInt(selectedOption.value));
-                if (productoSeleccionado) {
-                    const unit = productoSeleccionado.unit;
-                    if (unit === 'kg') unitText = 'Kilogramos (Ej: 0.5 o 1/2)';
-                    else if (unit === 'L') unitText = 'Litros (Ej: 0.25 o 1/4)';
+                const producto = productos.find(p => p.id === parseInt(selectedOption.value));
+                if (producto) {
+                    if (producto['Unidad'] === 'kg') unitText = 'Kilogramos (Ej: 0.5 o 1/2)';
+                    else if (producto['Unidad'] === 'L') unitText = 'Litros (Ej: 0.25 o 1/4)';
                 }
             }
             label.textContent = `Cantidad (${unitText})`;
@@ -378,18 +399,25 @@
         function renderRegistroVentas() {
             const container = document.getElementById('content-registro');
             if (container.classList.contains('hidden')) return;
+
+            const today = new Date().toISOString().split('T')[0];
+            const isToday = selectedDate === today;
+
+            const displayDateObj = new Date(selectedDate + 'T12:00:00Z');
+            const displayDate = displayDateObj.toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
             const formHTML = `
-                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Registrar Venta</h2>
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Registrar Nueva Venta</h3>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                     <div class="col-span-2 md:col-span-1">
                         <label for="regSelectProducto" class="block text-sm font-medium text-gray-600">Producto</label>
                         <select id="regSelectProducto" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" onchange="updateSalePrice(); updateQuantityLabel();">
                             <option value="" disabled selected>-- Elija un producto --</option>
-                            ${productos.map(p => `<option value="${p.id}" data-costo="${p.costo}" data-pvp="${p.precioVenta}">${p.nombre}</option>`).join('')}
+                            ${productos.map(p => `<option value="${p.id}">${p['Producto']}</option>`).join('')}
                         </select>
                     </div>
                     <div>
-                        <label for="regCantidadVendida" class="block text-sm font-medium text-gray-600" id="regCantidadLabel">Cantidad (unid)</label>
+                        <label for="regCantidadVendida" class="block text-sm font-medium text-gray-600" id="regCantidadLabel">Cantidad</label>
                         <input type="text" id="regCantidadVendida" placeholder="Ej: 0.5 o 1/2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" value="1" oninput="updateSalePrice()">
                     </div>
                     <div>
@@ -407,12 +435,29 @@
                 </div>
                 <button onclick="registrarVenta()" class="w-full md:w-auto px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors">Confirmar Venta</button>
                 <p id="msg-venta" class="mt-3 text-sm text-center text-gray-500"></p>
-                <h3 class="text-xl font-semibold mt-8 mb-4 border-t pt-4">Ventas del Día Registradas</h3>
+            `;
+
+            container.innerHTML = `
+                <div class="flex flex-wrap justify-between items-center mb-4 pb-4 border-b">
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-2 md:mb-0">Visor de Ventas</h2>
+                    <div class="flex items-center">
+                        <label for="sales-date-picker" class="text-sm font-medium text-gray-600 mr-2">Mostrando ventas de:</label>
+                        <input type="date" id="sales-date-picker" value="${selectedDate}" max="${today}" class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+
+                ${isToday ? formHTML : '<div class="text-center p-4 bg-gray-100 rounded-lg text-gray-600">Solo se pueden registrar nuevas ventas para el día de hoy. Seleccione la fecha actual para registrar ventas.</div>'}
+
+                <h3 class="text-xl font-semibold mt-8 mb-4 border-t pt-4">Ventas Registradas de ${displayDate}</h3>
                 <div id="ventas-list" class="space-y-3"></div>
             `;
-            container.innerHTML = formHTML;
-            updateSalePrice();
-            updateQuantityLabel();
+            
+            document.getElementById('sales-date-picker').addEventListener('change', handleDateChange);
+            
+            if (isToday) {
+                updateSalePrice();
+                updateQuantityLabel();
+            }
             renderVentasList();
         }
 
@@ -425,25 +470,21 @@
             const selectedOption = select.options[select.selectedIndex];
             let pvpUnitario = 0;
             if (selectedOption && selectedOption.value) {
-                const productoSeleccionado = productos.find(p => p.id === parseInt(selectedOption.value));
-                if (productoSeleccionado) pvpUnitario = productoSeleccionado.precioVenta;
+                const producto = productos.find(p => p.id === parseInt(selectedOption.value));
+                if (producto) pvpUnitario = producto['PVP Real (S/)'];
             }
-            if (!selectedOption || !selectedOption.value || pvpUnitario === 0) {
-                precioTotalInput.value = '';
-                hint.textContent = 'PVP unitario sugerido: S/ 0.00';
-                return;
-            }
+            hint.textContent = `PVP unitario sugerido: S/ ${pvpUnitario.toFixed(2)} por unidad/kg/L`;
             const cantidadDecimal = parseFractionToFloat(cantidadInput.value);
             if (isNaN(cantidadDecimal) || cantidadDecimal <= 0) {
                 precioTotalInput.value = '';
-                hint.textContent = 'Error en Cantidad. Use 1, 0.5, 1/2, etc.';
-                precioTotalInput.classList.add('border-red-500');
+                if (cantidadInput.value) {
+                    hint.textContent = 'Error en Cantidad. Use 1, 0.5, 1/2, etc.';
+                    precioTotalInput.classList.add('border-red-500');
+                }
                 return;
             }
             precioTotalInput.classList.remove('border-red-500');
-            const totalCalculado = (pvpUnitario * cantidadDecimal).toFixed(2);
-            precioTotalInput.value = totalCalculado;
-            hint.textContent = `PVP unitario sugerido: S/ ${pvpUnitario.toFixed(2)} por unidad/kg/L`;
+            precioTotalInput.value = (pvpUnitario * cantidadDecimal).toFixed(2);
         }
 
         function registrarVenta() {
@@ -453,78 +494,77 @@
             const pagoInput = document.getElementById('regMetodoPago');
             const msg = document.getElementById('msg-venta');
             const productoId = parseInt(select.value);
-            const cantidadDecimal = parseFractionToFloat(cantidadInput.value); 
+            const cantidadDecimal = parseFractionToFloat(cantidadInput.value);
             const precioTotal = parseFloat(precioTotalInput.value);
             const metodoPago = pagoInput.value;
             const productoVendido = productos.find(p => p.id === productoId);
 
             if (!productoVendido || isNaN(cantidadDecimal) || cantidadDecimal <= 0 || isNaN(precioTotal) || precioTotal <= 0) {
-                msg.textContent = 'Error: Complete todos los campos correctamente. Use un formato de cantidad válido (ej: 0.5 o 1/2).';
+                msg.textContent = 'Error: Complete todos los campos correctamente.';
                 msg.className = 'mt-3 text-sm text-center text-red-500 font-semibold';
                 return;
             }
-            
-            const costoUnitario = productoVendido.costo;
-            const precioVentaUnitario = precioTotal / cantidadDecimal; 
+
+            const costoUnitario = productoVendido['Costo (S/)'];
+            const precioVentaUnitario = precioTotal / cantidadDecimal;
+            const gananciaVenta = (precioVentaUnitario - costoUnitario) * cantidadDecimal;
 
             const nuevaVenta = {
-                nombre: productoVendido.nombre,
-                costo: costoUnitario,
-                precioVenta: precioVentaUnitario,
-                cantidad: cantidadDecimal,
-                precioTotal: precioTotal,
-                metodoPago: metodoPago,
-                fecha: new Date().toLocaleTimeString('es-PE')
+                'Fecha y Hora': new Date().toISOString(),
+                'Producto': productoVendido['Producto'],
+                'Cantidad': cantidadDecimal,
+                'Unidad': productoVendido['Unidad'],
+                'Costo Unitario (S/)': costoUnitario,
+                'PVP Unitario (S/)': precioVentaUnitario,
+                'Precio Total (S/)': precioTotal,
+                'Método de Pago': metodoPago,
+                'Ganancia (S/)': gananciaVenta
             };
 
             ventasDiarias.push(nuevaVenta);
-            addSaleToSheet(nuevaVenta); // Enviar a Google Sheets en segundo plano
-            
-            cantidadInput.value = '1';
-            select.value = ''; 
-            precioTotalInput.value = '';
-            
-            const gananciaVenta = (precioVentaUnitario - costoUnitario) * cantidadDecimal;
+            addSaleToSheet(nuevaVenta);
+
             msg.textContent = `Venta registrada. Ganancia: S/ ${gananciaVenta.toFixed(2)} (${metodoPago}).`;
             msg.className = 'mt-3 text-sm text-center text-green-500 font-semibold';
             
+            select.value = '';
+            cantidadInput.value = '1';
+            precioTotalInput.value = '';
             updateQuantityLabel();
             renderizarTodo();
         }
 
         function renderVentasList() {
             const listContainer = document.getElementById('ventas-list');
-            if (!listContainer) return; 
+            if (!listContainer) return;
             if (ventasDiarias.length === 0) {
-                listContainer.innerHTML = '<p class="text-gray-500 text-sm">Aún no hay ventas registradas.</p>';
+                listContainer.innerHTML = '<p class="text-gray-500 text-sm">No hay ventas registradas para la fecha seleccionada.</p>';
                 return;
             }
-            const listHTML = ventasDiarias.slice().reverse().map((venta) => { 
-                const gananciaUnitaria = venta.precioVenta - venta.costo;
-                const gananciaTotal = gananciaUnitaria * venta.cantidad;
-                const pagoColor = venta.metodoPago === 'Yape' ? 'bg-indigo-100 text-indigo-800' : 'bg-green-100 text-green-800';
-                const displayCantidad = venta.cantidad.toFixed(2).replace(/\.00$/, ''); 
+            listContainer.innerHTML = ventasDiarias.slice().reverse().map((venta) => {
+                const pagoColor = venta['Método de Pago'] === 'Yape' ? 'bg-indigo-100 text-indigo-800' : 'bg-green-100 text-green-800';
+                const displayCantidad = parseFloat(venta['Cantidad']).toFixed(2).replace(/\.00$/, '');
+                const time = new Date(venta['Fecha y Hora']).toLocaleTimeString('es-PE');
                 return `
                     <div class="flex flex-wrap md:flex-row justify-between items-center p-3 bg-gray-50 border border-gray-200 rounded-lg">
                         <div class="font-medium text-gray-800 w-full md:w-1/2 mb-2 md:mb-0">
-                            ${displayCantidad}x ${venta.nombre} 
-                            <span class="text-xs text-gray-500 ml-2">(${venta.fecha})</span>
+                            ${displayCantidad}x ${venta['Producto']}
+                            <span class="text-xs text-gray-500 ml-2">(${time})</span>
                         </div>
                         <div class="text-right flex flex-col sm:flex-row space-x-0 sm:space-x-4 w-full md:w-1/2 items-end md:items-center justify-end">
-                            <span class="text-xs font-medium ${pagoColor} px-2 py-0.5 rounded-full mb-1 sm:mb-0">${venta.metodoPago}</span>
-                            <p class="text-sm font-semibold">Total: S/ ${venta.precioTotal.toFixed(2)}</p>
-                            <p class="text-sm text-green-600 font-bold ml-0 sm:ml-4">G: S/ ${gananciaTotal.toFixed(2)}</p>
+                            <span class="text-xs font-medium ${pagoColor} px-2 py-0.5 rounded-full mb-1 sm:mb-0">${venta['Método de Pago']}</span>
+                            <p class="text-sm font-semibold">Total: S/ ${venta['Precio Total (S/)'].toFixed(2)}</p>
+                            <p class="text-sm text-green-600 font-bold ml-0 sm:ml-4">G: S/ ${venta['Ganancia (S/)'].toFixed(2)}</p>
                         </div>
                     </div>
                 `;
             }).join('');
-            listContainer.innerHTML = listHTML;
         }
 
         function renderGestionInventario() {
             const container = document.getElementById('content-inventario');
             if (container.classList.contains('hidden')) return;
-            const inventoryHTML = `
+            container.innerHTML = `
                 <h2 class="text-2xl font-semibold mb-4 text-gray-700">Lista y Edición de Productos</h2>
                 <p class="text-sm text-gray-500 mb-6">Los cambios se guardan en la nube automáticamente al hacer clic en "Guardar".</p>
                 <button onclick="addProduct()" class="mb-4 px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors shadow flex items-center">
@@ -536,9 +576,9 @@
                             <tr>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Producto</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Costo (S/)</th>
-                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">PVP Sugerido</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">PVP Sugerido (S/)</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">PVP Real (S/)</th>
-                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Margen Actual</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Margen Actual (S/)</th>
                                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Acción</th>
                             </tr>
                         </thead>
@@ -546,7 +586,6 @@
                     </table>
                 </div>
             `;
-            container.innerHTML = inventoryHTML;
             renderInventoryTable();
             safeCreateIcons();
         }
@@ -555,19 +594,21 @@
             const tbody = document.getElementById('inventory-table-body');
             if (!tbody) return;
             tbody.innerHTML = productos.map(p => {
-                const margenActual = p.precioVenta - p.costo;
-                const pvpSugerido = (p.costo * 1.20).toFixed(2);
+                const costo = p['Costo (S/)'];
+                const pvpReal = p['PVP Real (S/)'];
+                const margenActual = pvpReal - costo;
+                const pvpSugerido = (costo * 1.20).toFixed(2);
                 const margenColor = margenActual > 0 ? 'text-green-600' : (margenActual < 0 ? 'text-red-500' : 'text-gray-500');
                 return `
                     <tr id="row-${p.id}" class="hover:bg-gray-50 transition-colors">
-                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900"><input type="text" id="name-${p.id}" value="${p.nombre}" class="input-inline" /></td>
-                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500"><input type="number" id="cost-${p.id}" value="${p.costo.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900"><input type="text" id="name-${p.id}" value="${p['Producto']}" class="input-inline" /></td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500"><input type="number" id="cost-${p.id}" value="${costo.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td>
                         <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${pvpSugerido}</td>
-                        <td class="px-3 py-2 whitespace-nowrap"><input type="number" id="pvp-${p.id}" value="${p.precioVenta.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td>
+                        <td class="px-3 py-2 whitespace-nowrap"><input type="number" id="pvp-${p.id}" value="${pvpReal.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td>
                         <td class="px-3 py-2 whitespace-nowrap text-sm font-bold ${margenColor}">S/ ${margenActual.toFixed(2)}</td>
                         <td class="px-3 py-2 whitespace-nowrap text-sm space-x-2">
                             <button onclick="saveProductChanges(${p.id})" class="px-2 py-1 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors text-xs shadow">Guardar</button>
-                            <button onclick="confirmDelete(${p.id}, '${p.nombre}')" class="px-2 py-1 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors text-xs shadow">Eliminar</button>
+                            <button onclick="confirmDelete(${p.id}, '${p['Producto']}')" class="px-2 py-1 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors text-xs shadow">Eliminar</button>
                         </td>
                     </tr>
                 `;
@@ -582,44 +623,40 @@
             const newCost = parseFloat(costInput.value);
             const newPVP = parseFloat(pvpInput.value);
 
-            if (newName === "") { alertMessage('El nombre del producto no puede estar vacío.', 'red'); return; }
+            if (!newName) { alertMessage('El nombre del producto no puede estar vacío.', 'red'); return; }
             if (isNaN(newCost) || newCost < 0) { alertMessage('El Costo debe ser un número positivo.', 'red'); return; }
             if (isNaN(newPVP) || newPVP < 0) { alertMessage('El PVP Real debe ser un número positivo.', 'red'); return; }
 
             const productIndex = productos.findIndex(p => p.id === productId);
             if (productIndex !== -1) {
-                productos[productIndex].nombre = newName;
-                productos[productIndex].costo = newCost;
-                productos[productIndex].precioVenta = newPVP;
-                productos[productIndex].unit = getUnitFromProductName(newName);
+                productos[productIndex]['Producto'] = newName;
+                productos[productIndex]['Costo (S/)'] = newCost;
+                productos[productIndex]['PVP Real (S/)'] = newPVP;
+                productos[productIndex]['Unidad'] = getUnitFromProductName(newName);
                 renderizarTodo();
-                syncInventoryWithSheet(); // Sincronizar con la nube
+                syncInventoryWithSheet();
             }
         }
 
         function confirmDelete(productId, productName) {
             if (confirm(`¿Estás seguro de que quieres eliminar "${productName}"?`)) {
-                deleteProduct(productId);
+                productos = productos.filter(p => p.id !== productId);
+                renderizarTodo();
+                syncInventoryWithSheet();
             }
-        }
-        
-        function deleteProduct(productId) {
-            productos = productos.filter(p => p.id !== productId);
-            renderizarTodo();
-            syncInventoryWithSheet(); // Sincronizar con la nube
         }
 
         function addProduct() {
             const newProduct = {
                 id: nextProductId++,
-                nombre: "Nuevo Producto (kg, L o unid)",
-                costo: 1.00,
-                precioVenta: 1.20,
-                unit: 'unid'
+                'Producto': "Nuevo Producto (kg, L o unid)",
+                'Costo (S/)': 1.00,
+                'PVP Real (S/)': 1.20,
+                'Unidad': 'unid'
             };
             productos.push(newProduct);
             renderizarTodo();
-            syncInventoryWithSheet(); // Sincronizar con la nube
+            syncInventoryWithSheet();
             setTimeout(() => {
                 const newRow = document.getElementById(`row-${newProduct.id}`);
                 if (newRow) {
@@ -642,7 +679,6 @@
             msgBox.style.opacity = '1';
             setTimeout(() => { msgBox.style.opacity = '0'; }, 3000);
         }
-
     </script>
 </body>
 </html>
