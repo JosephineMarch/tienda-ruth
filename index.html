@@ -547,9 +547,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             const costoUnitario = productoVendido['Costo (S/)'];
             const precioVentaUnitario = precioTotal / cantidadDecimal;
             const gananciaVenta = (precioVentaUnitario - costoUnitario) * cantidadDecimal;
+            
+            // --- LA CORRECCIÓN ESTÁ AQUÍ ---
+            // 1. Creamos la fecha y hora local ANTES de intentar usarla.
+            const ahora = new Date();
+            // Formato 'dia/mes/año hora:minutos:segundos' según la configuración regional de Perú.
+            const fechaHoraLocal = `${ahora.toLocaleDateString('es-PE')} ${ahora.toLocaleTimeString('es-PE')}`;
 
             const nuevaVenta = {
-                'Fecha y Hora': fechaHoraLocal,
+                // 2. Usamos la variable que acabamos de crear.
+                'Fecha y Hora': fechaHoraLocal, 
                 'Producto': productoVendido['Producto'],
                 'Cantidad': cantidadDecimal,
                 'Unidad': productoVendido['Unidad'],
@@ -559,6 +566,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 'Método de Pago': metodoPago,
                 'Ganancia (S/)': gananciaVenta
             };
+            // --- FIN DE LA CORRECCIÓN ---
 
             ventasDiarias.push(nuevaVenta);
             addSaleToSheet(nuevaVenta);
