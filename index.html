@@ -93,7 +93,14 @@
         // --- ESTADO GLOBAL ---
         let productos = [];
         let ventasDiarias = []; // Contiene las ventas del día seleccionado
-        let selectedDate = new Date().toISOString().split('T')[0]; // Fecha seleccionada en el visor
+        
+        // Corrección: Obtener la fecha local en formato YYYY-MM-DD para evitar errores de zona horaria
+        const hoy = new Date();
+        const anio = hoy.getFullYear();
+        const mes = String(hoy.getMonth() + 1).padStart(2, '0'); // getMonth() es 0-indexado
+        const dia = String(hoy.getDate()).padStart(2, '0');
+        let selectedDate = `${anio}-${mes}-${dia}`; // Fecha seleccionada en el visor
+
         const GANANCIA_MINIMA = 60.00;
         let nextProductId = 1;
 
@@ -198,7 +205,11 @@
         }
 
         async function addSaleToSheet(saleData) {
-            const sheetName = new Date().toISOString().split('T')[0]; // Siempre registra en la hoja de hoy
+            const hoy = new Date();
+            const anio = hoy.getFullYear();
+            const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+            const dia = String(hoy.getDate()).padStart(2, '0');
+            const sheetName = `${anio}-${mes}-${dia}`; // Siempre registra en la hoja de hoy (local)
             try {
                 await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
@@ -294,24 +305,12 @@
         // --- INICIALIZACIÓN Y CONTROL DE ACCESO ---
         document.addEventListener('DOMContentLoaded', async () => {
             const appContainer = document.getElementById('app-container');
-            const password = prompt('Por favor, introduce la contraseña para acceder:');
-
-            if (password === 'ruth') {
-                appContainer.style.display = 'block';
-                initializeProducts();
-                ventasDiarias = await fetchSalesForDate(selectedDate);
-                renderizarTodo();
-                lucideScript.onload = safeCreateIcons;
-            } else {
-                document.body.innerHTML = `
-                    <div class="flex items-center justify-center h-screen">
-                        <div class="text-center p-8 bg-white rounded-lg shadow-lg">
-                            <h1 class="text-2xl font-bold text-red-600">Acceso Denegado</h1>
-                            <p class="text-gray-700 mt-2">La contraseña es incorrecta.</p>
-                        </div>
-                    </div>
-                `;
-            }
+            // Contraseña eliminada: la aplicación ahora es de acceso público.
+            appContainer.style.display = 'block';
+            initializeProducts();
+            ventasDiarias = await fetchSalesForDate(selectedDate);
+            renderizarTodo();
+            lucideScript.onload = safeCreateIcons;
         });
 
         async function handleDateChange(event) {
