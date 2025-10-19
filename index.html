@@ -190,16 +190,21 @@
             });
 
             try {
-                await fetch(APPS_SCRIPT_URL, {
+                console.log("Enviando inventario:", inventoryPayload); // DEBUGGING
+                const response = await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'syncInventory', payload: inventoryPayload })
                 });
-                console.log('Sincronización de inventario iniciada.');
-                alertMessage('Inventario sincronizado con la nube.', 'blue');
+                const result = await response.json();
+                if (result.status === "success") {
+                    alertMessage(result.message, 'blue');
+                } else {
+                    throw new Error(result.message);
+                }
             } catch (error) {
                 console.error('Error al sincronizar el inventario:', error);
-                alertMessage('Error al sincronizar inventario.', 'red');
+                alertMessage(`Error de inventario: ${error.message}`, 'red');
             }
         }
 
@@ -210,15 +215,20 @@
             const dia = String(hoy.getDate()).padStart(2, '0');
             const sheetName = `${anio}-${mes}-${dia}`; // Siempre registra en la hoja de hoy (local)
             try {
-                await fetch(APPS_SCRIPT_URL, {
+                console.log("Enviando venta:", saleData); // DEBUGGING
+                const response = await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'addSale', sheetName: sheetName, payload: saleData })
                 });
-                console.log('Sincronización de venta iniciada.');
+                const result = await response.json();
+                if (result.status !== "success") {
+                    throw new Error(result.message);
+                }
+                console.log('Sincronización de venta completada.');
             } catch (error) {
                 console.error('Error al añadir venta a la hoja:', error);
-                alertMessage('Error al guardar venta en la nube.', 'red');
+                alertMessage(`Error al guardar venta: ${error.message}`, 'red');
             }
         }
 
