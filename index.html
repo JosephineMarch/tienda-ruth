@@ -6,10 +6,6 @@
     <title>Sistema de Gestión de Bodega</title>
     <!-- Carga de Tailwind CSS para un diseño moderno y responsivo -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase SDKs -->
-    <script type="module" src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
-    <script type="module" src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
-    <script type="module" src="./firebase.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -60,15 +56,11 @@
     <div id="app-container" style="display: none;">
         <div class="max-w-6xl mx-auto">
             <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Sistema de Gestión de Bodega</h1>
-          <!-- BOTONES DE ACCIÓN PRINCIPALES -->
-<div class="mb-8 flex justify-center space-x-4">
-    <button id="save-firebase-button" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-lg flex items-center space-x-2">
+          <!-- BOTÓN DE SINCRONIZACIÓN -->
+<div class="mb-8 flex justify-center">
+    <button id="sync-button" onclick="syncAllDataWithSheet()" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all shadow-lg flex items-center space-x-2">
          <i data-lucide="cloud-upload" class="w-5 h-5"></i>
-        <span>Guardar en Firebase</span>
-    </button>
-    <button id="download-json-button" class="px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-800 transition-all shadow-lg flex items-center space-x-2">
-         <i data-lucide="download" class="w-5 h-5"></i>
-        <span>Descargar JSON</span>
+        <span>Sincronizar y Guardar en la Nube</span>
     </button>
 </div>
 
@@ -98,16 +90,15 @@
         </div>
     </div>
 
-   <script type="module">
-        import { saveDataToFirebase, loadDataFromFirebase } from './firebase.js';
+   <script>
         // ... (el código de carga de lucide se mantiene) ...
         const lucideScript = document.createElement('script');
         lucideScript.src = "https://unpkg.com/lucide@latest";
         document.head.appendChild(lucideScript);
 
-        // --- CONFIGURACIÓN DE FIREBASE ---
-        // Las funciones de Firebase ahora están en firebase.js
-        // Se incluyen los scripts necesarios en el head.
+        // --- CONFIGURACIÓN DE LA API (REACTIVADA) ---
+        // PEGA AQUÍ TU NUEVA URL DE IMPLEMENTACIÓN
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyY8mjAnsZ9X3pf0PAXIaS9KSs1orL0CmNnTPjb5hqzwSNvbTQfivvvtxJWRfhp64QL/exec';
 
         // --- ESTADO GLOBAL (sin cambios) ---
         let productos = [];
@@ -121,46 +112,54 @@
         const GANANCIA_MINIMA = 60.00;
         let nextProductId = 1;
 
-        // --- GESTIÓN DE BASE DE DATOS LOCAL Y FIREBASE ---
-        function saveDataToLocal() {
-            const appData = { productos: productos, ventas: todasLasVentas, nextProductId: nextProductId };
-            localStorage.setItem('bodegaData', JSON.stringify(appData));
-            console.log("Datos guardados en localStorage.");
-        }
+        // --- GESTIÓN DE BASE DE DATOS LOCAL (sin cambios) ---
+        function saveDataToLocal() { /* ... sin cambios ... */ }
+        function loadDataFromLocal() { /* ... sin cambios ... */ }
+        // (Pega aquí las funciones saveDataToLocal y loadDataFromLocal completas de la Fase 1)
+        function saveDataToLocal() { const appData = { productos: productos, ventas: todasLasVentas, nextProductId: nextProductId }; localStorage.setItem('bodegaData', JSON.stringify(appData)); console.log("Datos guardados en localStorage."); }
+        function loadDataFromLocal() { const appDataString = localStorage.getItem('bodegaData'); if (appDataString) { console.log("Cargando datos desde localStorage."); const appData = JSON.parse(appDataString); productos = appData.productos || []; todasLasVentas = appData.ventas || {}; nextProductId = appData.nextProductId || (productos.length > 0 ? Math.max(...productos.map(p => p.id)) + 1 : 1); ventasDiarias = todasLasVentas[selectedDate] || []; return true; } console.log("No se encontraron datos locales. Inicializando aplicación."); return false; }
 
-        function loadDataFromLocal() {
-            const appDataString = localStorage.getItem('bodegaData');
-            if (appDataString) {
-                console.log("Cargando datos desde localStorage.");
-                const appData = JSON.parse(appDataString);
-                productos = appData.productos || [];
-                todasLasVentas = appData.ventas || {};
-                nextProductId = appData.nextProductId || (productos.length > 0 ? Math.max(...productos.map(p => p.id)) + 1 : 1);
-                ventasDiarias = todasLasVentas[selectedDate] || [];
-                return true;
-            }
-            console.log("No se encontraron datos locales. Inicializando aplicación.");
-            return false;
-        }
 
-        async function saveAllDataToFirebase() {
-            const syncButton = document.getElementById('save-firebase-button');
+        // --- SINCRONIZACIÓN CON GOOGLE SHEETS (REACTIVADAS Y MEJORADAS) ---
+
+        // Función Maestra de Sincronización (para el botón)
+        async function syncAllDataWithSheet() {
+            const syncButton = document.getElementById('sync-button');
             const originalText = syncButton.innerHTML;
             syncButton.disabled = true;
-            syncButton.innerHTML = `<i data-lucide="loader-2" class="animate-spin w-5 h-5"></i><span>Guardando...</span>`;
+            syncButton.innerHTML = `<i data-lucide="loader-2" class="animate-spin w-5 h-5"></i><span>Sincronizando...</span>`;
             safeCreateIcons();
 
             try {
-                const dataToSave = {
-                    productos: productos,
-                    ventas: todasLasVentas,
-                    nextProductId: nextProductId
-                };
-                await saveDataToFirebase(dataToSave);
-                alertMessage('¡Éxito! Los datos se han guardado en la nube.', 'green');
+                // Paso 1: Sincronizar el inventario
+                const inventoryPayload = productos.map(p => {
+                    const costo = p['Costo (S/)'];
+                    const pvpReal = p['PVP Real (S/)'];
+                    return {
+                        'Producto': p['Producto'],
+                        'Costo (S/)': costo,
+                        'PVP Sugerido (S/)': (costo * 1.20),
+                        'PVP Real (S/)': pvpReal,
+                        'Margen Actual (S/)': pvpReal - costo,
+                        'Unidad': p['Unidad']
+                    };
+                });
+                
+                console.log("Enviando inventario para sincronización:", inventoryPayload);
+                const response = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'syncInventory', payload: inventoryPayload })
+                });
+
+                const result = await response.json();
+                if (result.status !== "success") throw new Error(result.message);
+                
+                alertMessage('¡Éxito! El inventario se ha guardado en la nube.', 'green');
+
             } catch (error) {
-                console.error('Error al guardar en Firebase:', error);
-                alertMessage(`Error al guardar en la nube: ${error.message}`, 'red');
+                console.error('Error al sincronizar:', error);
+                alertMessage(`Error al sincronizar: ${error.message}`, 'red');
             } finally {
                 syncButton.disabled = false;
                 syncButton.innerHTML = originalText;
@@ -168,27 +167,29 @@
             }
         }
         
-        function downloadJSON() {
-            const dataStr = JSON.stringify({
-                productos: productos,
-                ventas: todasLasVentas,
-                nextProductId: nextProductId
-            }, null, 2);
-            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-            
-            const exportFileDefaultName = 'bodega_data.json';
-            
-            let linkElement = document.createElement('a');
-            linkElement.setAttribute('href', dataUri);
-            linkElement.setAttribute('download', exportFileDefaultName);
-            linkElement.click();
+        // Se mantiene para aÑadir ventas una por una
+        async function addSaleToSheet(saleData) {
+            try {
+                const response = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'addSale', sheetName: selectedDate, payload: saleData })
+                });
+                const result = await response.json();
+                if (result.status !== "success") throw new Error(result.message);
+                console.log('Venta sincronizada con la nube.');
+            } catch (error) {
+                console.error('Error al añadir venta a la hoja:', error);
+                alertMessage(`La venta se guardó localmente, pero falló al guardar en la nube: ${error.message}`, 'red');
+            }
         }
-
+        
+        // La carga inicial de ventas AÚN no se hará desde la nube para mantener la velocidad
+        // Esta función por ahora solo carga desde el objeto local.
         async function fetchSalesForDate(dateString) {
             ventasDiarias = todasLasVentas[dateString] || [];
             return ventasDiarias;
         }
-
 
         // --- MODIFICACIÓN FINAL EN registrarVenta ---
 
@@ -204,8 +205,9 @@
             ventasDiarias = todasLasVentas[selectedDate];
             
             saveDataToLocal(); // Guarda en local inmediatamente
-            saveAllDataToFirebase(); // Guarda en Firebase
-
+            
+            // Y AHORA, TAMBIÉN INTENTA GUARDAR EN LA NUBE
+            addSaleToSheet(nuevaVenta);
 
             msg.textContent = `Venta registrada. Ganancia: S/ ${gananciaVenta.toFixed(2)}`;
             msg.className = 'mt-3 text-sm text-center text-green-500 font-semibold';
@@ -213,121 +215,16 @@
             select.value = ''; cantidadInput.value = '1'; precioTotalInput.value = ''; updateQuantityLabel(); renderizarTodo();
         }
 
-        function deleteVenta(index) {
-            const reversedIndex = ventasDiarias.length - 1 - index;
-            const ventaEliminada = ventasDiarias[reversedIndex];
-            if (confirm(`¿Estás seguro de que quieres eliminar la venta de ${ventaEliminada['Producto']}?`)) {
-                ventasDiarias.splice(reversedIndex, 1);
-                todasLasVentas[selectedDate] = ventasDiarias;
-                saveDataToLocal();
-                saveAllDataToFirebase();
-                renderizarTodo();
-            }
-        }
-
-        function editVenta(index) {
-            const reversedIndex = ventasDiarias.length - 1 - index;
-            const venta = ventasDiarias[reversedIndex];
-            const ventaElement = document.getElementById(`venta-${index}`);
-
-            const editHTML = `
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div class="col-span-2 md:col-span-1">
-                        <label class="block text-sm font-medium text-gray-600">Producto</label>
-                        <select id="edit-producto-${index}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                            ${productos.map(p => `<option value="${p.id}" ${p['Producto'] === venta['Producto'] ? 'selected' : ''}>${p['Producto']}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-600">Cantidad</label>
-                        <input type="text" id="edit-cantidad-${index}" value="${venta.Cantidad}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-600">Precio Total (S/)</label>
-                        <input type="number" id="edit-precio-${index}" value="${venta['Precio Total (S/)']}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                    </div>
-                    <div class="flex items-end space-x-2">
-                        <button onclick="saveVentaChanges(${index})" class="px-4 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors">Guardar</button>
-                        <button onclick="cancelEdit()" class="px-4 py-2 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors">Cancelar</button>
-                    </div>
-                </div>
-            `;
-            
-            const originalContent = ventaElement.innerHTML;
-            ventaElement.innerHTML = editHTML;
-            ventaElement.setAttribute('data-original-content', originalContent);
-        }
-
-        function saveVentaChanges(index) {
-            const reversedIndex = ventasDiarias.length - 1 - index;
-            const venta = ventasDiarias[reversedIndex];
-
-            const productoId = parseInt(document.getElementById(`edit-producto-${index}`).value);
-            const cantidad = parseFractionToFloat(document.getElementById(`edit-cantidad-${index}`).value);
-            const precioTotal = parseFloat(document.getElementById(`edit-precio-${index}`).value);
-            const productoEditado = productos.find(p => p.id === productoId);
-
-            if (!productoEditado || isNaN(cantidad) || cantidad <= 0 || isNaN(precioTotal) || precioTotal <= 0) {
-                alert('Error: Complete todos los campos correctamente.');
-                return;
-            }
-
-            const costoUnitario = productoEditado['Costo (S/)'];
-            const precioVentaUnitario = precioTotal / cantidad;
-            const gananciaVenta = (precioVentaUnitario - costoUnitario) * cantidad;
-
-            venta['Producto'] = productoEditado['Producto'];
-            venta['Cantidad'] = cantidad;
-            venta['Precio Total (S/)'] = precioTotal;
-            venta['Costo Unitario (S/)'] = costoUnitario;
-            venta['PVP Unitario (S/)'] = precioVentaUnitario;
-            venta['Ganancia (S/)'] = gananciaVenta;
-
-            saveDataToLocal();
-            saveAllDataToFirebase();
-        }
-
-        function cancelEdit() {
-            renderizarTodo();
-        }
-
         // --- El resto de tus funciones no necesitan cambios ---
         // Pega aquí todas las demás funciones: initializeProducts, handleDateChange, 
         // saveProductChanges, confirmDelete, addProduct, y todas las de renderizado.
         // ...
-        document.addEventListener('DOMContentLoaded', async () => {
-            const appContainer = document.getElementById('app-container');
-            let dataLoaded = false;
-
-            // Intenta cargar desde Firebase
-            const firebaseData = await loadDataFromFirebase();
-            if (firebaseData) {
-                productos = firebaseData.productos || [];
-                todasLasVentas = firebaseData.ventas || {};
-                nextProductId = firebaseData.nextProductId || (productos.length > 0 ? Math.max(...productos.map(p => p.id)) + 1 : 1);
-                ventasDiarias = todasLasVentas[selectedDate] || [];
-                dataLoaded = true;
-            } else if (loadDataFromLocal()) { // Si no hay datos en Firebase, intenta cargar desde LocalStorage
-                dataLoaded = true;
-            }
-
-            if (!dataLoaded) {
-                initializeProducts();
-            }
-
-            appContainer.style.display = 'block';
-            renderizarTodo();
-            lucideScript.onload = safeCreateIcons;
-
-            // Add event listeners for the new buttons
-            document.getElementById('save-firebase-button').addEventListener('click', saveAllDataToFirebase);
-            document.getElementById('download-json-button').addEventListener('click', downloadJSON);
-        });
-        function initializeProducts() { const initialData = [ { nombre: "Aceite vegetal Deleite 1L", costo: 7.50 }, { nombre: "Aceite vegetal Patrona 1L", costo: 8.00 }, { nombre: "Aceite vegetal Primor 1L", costo: 9.20 }, { nombre: "Arroz 1 kg", costo: 4.00 }, { nombre: "Avena clásica 3 ositos (bolsa)", costo: 4.80 }, { nombre: "Avena en Hojuelas Quaker (caja)", costo: 6.50 }, { nombre: "Avena quinua 3 ositos (bolsa)", costo: 5.20 }, { nombre: "Azúcar 1kg", costo: 4.30 }, { nombre: "Bebida (Brut/Cava) Marca no clara", costo: 15.00 }, { nombre: "Bolsas de Granos Florida (varios)", costo: 3.50 }, { nombre: "Caldos Maggi (cubo x 6)", costo: 2.80 }, { nombre: "Canela (bolsa pequeña)", costo: 1.50 }, { nombre: "Chocolate de taza (tableta)", costo: 5.50 }, { nombre: "Chocolate en Barra Sublime (unid)", costo: 1.80 }, { nombre: "Cocoa winter's (lata)", costo: 7.00 }, { nombre: "Conserva Florida (atún)", costo: 3.80 }, { nombre: "Conserva Gloria (atún)", costo: 3.50 }, { nombre: "Detergente en Polvo Noble 1kg", costo: 7.50 }, { nombre: "Esencia de Vainilla Katita Vainilla", costo: 3.00 }, { nombre: "Fideos sopa Anita 250g", costo: 1.50 }, { nombre: "Fideos tallarin Anita 500g", costo: 2.40 }, { nombre: "Filtrante Anis Herbi (caja 25u)", costo: 4.50 }, { nombre: "Filtrante manzanilla McColin's", costo: 4.80 }, { nombre: "Filtrante Te bolsita (caja 25u)", costo: 3.50 }, { nombre: "Fosforo (caja)", costo: 0.80 }, { nombre: "Granos/Legumbres Compass 500g", costo: 4.00 }, { nombre: "Harina 1kg", costo: 3.20 }, { nombre: "Harina de Trigo Medalla 1kg", costo: 3.50 }, { nombre: "Harina Preparada/Maicena Maizena Duryea", costo: 5.50 }, { nombre: "Hongos laurel (bolsa pequeña)", costo: 1.00 }, { nombre: "Leche condensada (lata)", costo: 4.80 }, { nombre: "Leche Bonlé (lata)", costo: 2.90 }, { nombre: "Leche Bonlé (caja 1L)", costo: 3.80 }, { nombre: "Leche en bolsa 1L", costo: 3.20 }, { nombre: "Leche Gloria (caja 1L)", costo: 4.20 }, { nombre: "Leche Gloria (chica lata)", costo: 3.00 }, { nombre: "Leche Gloria (grande lata)", costo: 3.90 }, { nombre: "Leche Gloria (niños caja)", costo: 4.50 }, { nombre: "Leche Gloria zero lactosa (lata)", costo: 3.50 }, { nombre: "Leche Gloria zero lactosa (caja)", costo: 4.80 }, { nombre: "Leche Laive (lata)", costo: 3.10 }, { nombre: "Leche Laive sin lactosa (caja)", costo: 4.90 }, { nombre: "Leche Pura vida (chica lata)", costo: 2.80 }, { nombre: "Leche Pura vida (grande lata)", costo: 3.70 }, { nombre: "Lenteja 1 kg", costo: 6.00 }, { nombre: "Maizena Duryea", costo: 5.50 }, { nombre: "Mani (bolsa pequeña)", costo: 1.50 }, { nombre: "Mayonesa Alacena (sachet)", costo: 2.00 }, { nombre: "Mezcla Láctea Pura Vida (caja)", costo: 3.50 }, { nombre: "Papel Higiénico Jade (rollo)", costo: 1.20 }, { nombre: "Papel Higiénico Noble 2 rollos", costo: 3.00 }, { nombre: "Papel Higiénico Paracas 4 rollos", costo: 6.00 }, { nombre: "Papel Higiénico Tull 6 rollos", costo: 8.50 }, { nombre: "Papel servilleta Sublime", costo: 0.50 }, { nombre: "Papel Toalla Nova (rollo)", costo: 5.00 }, { nombre: "Papel Toalla Paracas (rollo)", costo: 4.00 }, { nombre: "Pimienta comino (bolsa pequeña)", costo: 1.00 }, { nombre: "Sala de tomate Don Vittorio", costo: 2.50 }, { nombre: "Sillao Ajinomoto (botella)", costo: 4.00 }, { nombre: "Sillao Kikí (botella)", costo: 3.80 }, { nombre: "Sopas/Condimentos McCrispy's (o similar)", costo: 1.50 }, { nombre: "Sopas/Condimentos Sibarita (o similar)", costo: 1.20 }, { nombre: "Vainilla Katita", costo: 3.00 }, ]; productos = initialData.map((p, i) => ({ id: i + 1, 'Producto': p.nombre, 'Costo (S/)': p.costo, 'PVP Real (S/)': parseFloat((p.costo * 1.20).toFixed(2)), 'Unidad': getUnitFromProductName(p.nombre) })); nextProductId = productos.length + 1; saveDataToLocal(); saveAllDataToFirebase(); }
+        document.addEventListener('DOMContentLoaded', async () => { const appContainer = document.getElementById('app-container'); if (!loadDataFromLocal()) { initializeProducts(); } appContainer.style.display = 'block'; renderizarTodo(); lucideScript.onload = safeCreateIcons; });
+        function initializeProducts() { const initialData = [ { nombre: "Aceite vegetal Deleite 1L", costo: 7.50 }, { nombre: "Aceite vegetal Patrona 1L", costo: 8.00 }, { nombre: "Aceite vegetal Primor 1L", costo: 9.20 }, { nombre: "Arroz 1 kg", costo: 4.00 }, { nombre: "Avena clásica 3 ositos (bolsa)", costo: 4.80 }, { nombre: "Avena en Hojuelas Quaker (caja)", costo: 6.50 }, { nombre: "Avena quinua 3 ositos (bolsa)", costo: 5.20 }, { nombre: "Azúcar 1kg", costo: 4.30 }, { nombre: "Bebida (Brut/Cava) Marca no clara", costo: 15.00 }, { nombre: "Bolsas de Granos Florida (varios)", costo: 3.50 }, { nombre: "Caldos Maggi (cubo x 6)", costo: 2.80 }, { nombre: "Canela (bolsa pequeña)", costo: 1.50 }, { nombre: "Chocolate de taza (tableta)", costo: 5.50 }, { nombre: "Chocolate en Barra Sublime (unid)", costo: 1.80 }, { nombre: "Cocoa winter's (lata)", costo: 7.00 }, { nombre: "Conserva Florida (atún)", costo: 3.80 }, { nombre: "Conserva Gloria (atún)", costo: 3.50 }, { nombre: "Detergente en Polvo Noble 1kg", costo: 7.50 }, { nombre: "Esencia de Vainilla Katita Vainilla", costo: 3.00 }, { nombre: "Fideos sopa Anita 250g", costo: 1.50 }, { nombre: "Fideos tallarin Anita 500g", costo: 2.40 }, { nombre: "Filtrante Anis Herbi (caja 25u)", costo: 4.50 }, { nombre: "Filtrante manzanilla McColin's", costo: 4.80 }, { nombre: "Filtrante Te bolsita (caja 25u)", costo: 3.50 }, { nombre: "Fosforo (caja)", costo: 0.80 }, { nombre: "Granos/Legumbres Compass 500g", costo: 4.00 }, { nombre: "Harina 1kg", costo: 3.20 }, { nombre: "Harina de Trigo Medalla 1kg", costo: 3.50 }, { nombre: "Harina Preparada/Maicena Maizena Duryea", costo: 5.50 }, { nombre: "Hongos laurel (bolsa pequeña)", costo: 1.00 }, { nombre: "Leche condensada (lata)", costo: 4.80 }, { nombre: "Leche Bonlé (lata)", costo: 2.90 }, { nombre: "Leche Bonlé (caja 1L)", costo: 3.80 }, { nombre: "Leche en bolsa 1L", costo: 3.20 }, { nombre: "Leche Gloria (caja 1L)", costo: 4.20 }, { nombre: "Leche Gloria (chica lata)", costo: 3.00 }, { nombre: "Leche Gloria (grande lata)", costo: 3.90 }, { nombre: "Leche Gloria (niños caja)", costo: 4.50 }, { nombre: "Leche Gloria zero lactosa (lata)", costo: 3.50 }, { nombre: "Leche Gloria zero lactosa (caja)", costo: 4.80 }, { nombre: "Leche Laive (lata)", costo: 3.10 }, { nombre: "Leche Laive sin lactosa (caja)", costo: 4.90 }, { nombre: "Leche Pura vida (chica lata)", costo: 2.80 }, { nombre: "Leche Pura vida (grande lata)", costo: 3.70 }, { nombre: "Lenteja 1 kg", costo: 6.00 }, { nombre: "Maizena Duryea", costo: 5.50 }, { nombre: "Mani (bolsa pequeña)", costo: 1.50 }, { nombre: "Mayonesa Alacena (sachet)", costo: 2.00 }, { nombre: "Mezcla Láctea Pura Vida (caja)", costo: 3.50 }, { nombre: "Papel Higiénico Jade (rollo)", costo: 1.20 }, { nombre: "Papel Higiénico Noble 2 rollos", costo: 3.00 }, { nombre: "Papel Higiénico Paracas 4 rollos", costo: 6.00 }, { nombre: "Papel Higiénico Tull 6 rollos", costo: 8.50 }, { nombre: "Papel servilleta Sublime", costo: 0.50 }, { nombre: "Papel Toalla Nova (rollo)", costo: 5.00 }, { nombre: "Papel Toalla Paracas (rollo)", costo: 4.00 }, { nombre: "Pimienta comino (bolsa pequeña)", costo: 1.00 }, { nombre: "Sala de tomate Don Vittorio", costo: 2.50 }, { nombre: "Sillao Ajinomoto (botella)", costo: 4.00 }, { nombre: "Sillao Kikí (botella)", costo: 3.80 }, { nombre: "Sopas/Condimentos McCrispy's (o similar)", costo: 1.50 }, { nombre: "Sopas/Condimentos Sibarita (o similar)", costo: 1.20 }, { nombre: "Vainilla Katita", costo: 3.00 }, ]; productos = initialData.map((p, i) => ({ id: i + 1, 'Producto': p.nombre, 'Costo (S/)': p.costo, 'PVP Real (S/)': parseFloat((p.costo * 1.20).toFixed(2)), 'Unidad': getUnitFromProductName(p.nombre) })); nextProductId = productos.length + 1; saveDataToLocal(); }
         async function handleDateChange(event) { selectedDate = event.target.value; await fetchSalesForDate(selectedDate); renderizarTodo(); }
-        function saveProductChanges(productId) { const nameInput = document.getElementById(`name-${productId}`); const costInput = document.getElementById(`cost-${productId}`); const pvpInput = document.getElementById(`pvp-${productId}`); const newName = nameInput.value.trim(); const newCost = parseFloat(costInput.value); const newPVP = parseFloat(pvpInput.value); if (!newName) { alertMessage('El nombre del producto no puede estar vacío.', 'red'); return; } if (isNaN(newCost) || newCost < 0) { alertMessage('El Costo debe ser un número positivo.', 'red'); return; } if (isNaN(newPVP) || newPVP < 0) { alertMessage('El PVP Real debe ser un número positivo.', 'red'); return; } const productIndex = productos.findIndex(p => p.id === productId); if (productIndex !== -1) { productos[productIndex]['Producto'] = newName; productos[productIndex]['Costo (S/)'] = newCost; productos[productIndex]['PVP Real (S/)'] = newPVP; productos[productIndex]['Unidad'] = getUnitFromProductName(newName); saveDataToLocal(); saveAllDataToFirebase(); renderizarTodo(); alertMessage('Producto guardado localmente.', 'blue'); } }
-        function confirmDelete(productId, productName) { if (confirm(`¿Estás seguro de que quieres eliminar "${productName}"?`)) { productos = productos.filter(p => p.id !== productId); saveDataToLocal(); saveAllDataToFirebase(); renderizarTodo(); } }
-        function addProduct() { const newProduct = { id: nextProductId++, 'Producto': "Nuevo Producto (kg, L o unid)", 'Costo (S/)': 1.00, 'PVP Real (S/)': 1.20, 'Unidad': 'unid' }; productos.push(newProduct); saveDataToLocal(); saveAllDataToFirebase(); renderizarTodo(); setTimeout(() => { const newRow = document.getElementById(`row-${newProduct.id}`); if (newRow) { newRow.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById(`name-${newProduct.id}`).focus(); } }, 50); }
+        function saveProductChanges(productId) { const nameInput = document.getElementById(`name-${productId}`); const costInput = document.getElementById(`cost-${productId}`); const pvpInput = document.getElementById(`pvp-${productId}`); const newName = nameInput.value.trim(); const newCost = parseFloat(costInput.value); const newPVP = parseFloat(pvpInput.value); if (!newName) { alertMessage('El nombre del producto no puede estar vacío.', 'red'); return; } if (isNaN(newCost) || newCost < 0) { alertMessage('El Costo debe ser un número positivo.', 'red'); return; } if (isNaN(newPVP) || newPVP < 0) { alertMessage('El PVP Real debe ser un número positivo.', 'red'); return; } const productIndex = productos.findIndex(p => p.id === productId); if (productIndex !== -1) { productos[productIndex]['Producto'] = newName; productos[productIndex]['Costo (S/)'] = newCost; productos[productIndex]['PVP Real (S/)'] = newPVP; productos[productIndex]['Unidad'] = getUnitFromProductName(newName); saveDataToLocal(); renderizarTodo(); alertMessage('Producto guardado localmente.', 'blue'); } }
+        function confirmDelete(productId, productName) { if (confirm(`¿Estás seguro de que quieres eliminar "${productName}"?`)) { productos = productos.filter(p => p.id !== productId); saveDataToLocal(); renderizarTodo(); } }
+        function addProduct() { const newProduct = { id: nextProductId++, 'Producto': "Nuevo Producto (kg, L o unid)", 'Costo (S/)': 1.00, 'PVP Real (S/)': 1.20, 'Unidad': 'unid' }; productos.push(newProduct); saveDataToLocal(); renderizarTodo(); setTimeout(() => { const newRow = document.getElementById(`row-${newProduct.id}`); if (newRow) { newRow.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById(`name-${newProduct.id}`).focus(); } }, 50); }
         function safeCreateIcons() { if (typeof lucide !== 'undefined' && lucide.createIcons) { lucide.createIcons(); } }
         function parseFractionToFloat(inputString) { if (!inputString) return NaN; const cleanedInput = String(inputString).trim().replace(',', '.'); const fractionMatch = cleanedInput.match(/^(\d+)\/(\d+)$/); if (fractionMatch) { const numerator = parseInt(fractionMatch[1], 10); const denominator = parseInt(fractionMatch[2], 10); if (denominator !== 0) return numerator / denominator; } const decimalValue = parseFloat(cleanedInput); return !isNaN(decimalValue) ? decimalValue : NaN; }
         function getUnitFromProductName(name) { name = name.toLowerCase(); if (name.includes('kg') || name.includes(' lenteja') || name.includes('harina') || name.includes('azúcar') || name.includes('arroz')) return 'kg'; if (name.includes('1l') || name.includes('litro') || name.includes('aceite')) return 'L'; return 'unid'; }
@@ -338,7 +235,7 @@
         function updateQuantityLabel() { const select = document.getElementById('regSelectProducto'); const label = document.getElementById('regCantidadLabel'); if (!select || !label) return; const selectedOption = select.options[select.selectedIndex]; let unitText = 'Unidades'; if (selectedOption && selectedOption.value) { const producto = productos.find(p => p.id === parseInt(selectedOption.value)); if (producto) { if (producto['Unidad'] === 'kg') unitText = 'Kilogramos (Ej: 0.5 o 1/2)'; else if (producto['Unidad'] === 'L') unitText = 'Litros (Ej: 0.25 o 1/4)'; } } label.textContent = `Cantidad (${unitText})`; }
         function renderRegistroVentas() { const container = document.getElementById('content-registro'); if (container.classList.contains('hidden')) return; const hoy = new Date(); const anio = hoy.getFullYear(); const mes = String(hoy.getMonth() + 1).padStart(2, '0'); const dia = String(hoy.getDate()).padStart(2, '0'); const today = `${anio}-${mes}-${dia}`; const isToday = selectedDate === today; const displayDateObj = new Date(selectedDate + 'T12:00:00Z'); const displayDate = displayDateObj.toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); const formHTML = ` <h3 class="text-xl font-semibold mb-4 text-gray-700">Registrar Nueva Venta</h3> <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"> <div class="col-span-2 md:col-span-1"> <label for="regSelectProducto" class="block text-sm font-medium text-gray-600">Producto</label> <select id="regSelectProducto" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" onchange="updateSalePrice(); updateQuantityLabel();"> <option value="" disabled selected>-- Elija un producto --</option> ${productos.map(p => `<option value="${p.id}">${p['Producto']}</option>`).join('')} </select> </div> <div> <label for="regCantidadVendida" class="block text-sm font-medium text-gray-600" id="regCantidadLabel">Cantidad</label> <input type="text" id="regCantidadVendida" placeholder="Ej: 0.5 o 1/2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" value="1" oninput="updateSalePrice()"> </div> <div> <label for="regPrecioVenta" class="block text-sm font-medium text-gray-600">Precio Total (S/)</label> <input type="number" id="regPrecioVenta" placeholder="Total" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border font-bold" min="0" step="0.01"> <p id="precio-unitario-hint" class="text-xs text-gray-500 mt-1">PVP unitario sugerido: S/ 0.00</p> </div> <div> <label for="regMetodoPago" class="block text-sm font-medium text-gray-600">Método de Pago</label> <select id="regMetodoPago" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"> <option value="Efectivo">Efectivo</option> <option value="Yape">Yape</option> </select> </div> </div> <button onclick="registrarVenta()" class="w-full md:w-auto px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors">Confirmar Venta</button> <p id="msg-venta" class="mt-3 text-sm text-center text-gray-500"></p> `; container.innerHTML = ` <div class="flex flex-wrap justify-between items-center mb-4 pb-4 border-b"> <h2 class="text-2xl font-semibold text-gray-700 mb-2 md:mb-0">Visor de Ventas</h2> <div class="flex items-center"> <label for="sales-date-picker" class="text-sm font-medium text-gray-600 mr-2">Mostrando ventas de:</label> <input type="date" id="sales-date-picker" value="${selectedDate}" max="${today}" class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"> </div> </div> ${isToday ? formHTML : '<div class="text-center p-4 bg-gray-100 rounded-lg text-gray-600">Solo se pueden registrar nuevas ventas para el día de hoy. Seleccione la fecha actual para registrar ventas.</div>'} <h3 class="text-xl font-semibold mt-8 mb-4 border-t pt-4">Ventas Registradas de ${displayDate}</h3> <div id="ventas-list" class="space-y-3"></div> `; document.getElementById('sales-date-picker').addEventListener('change', handleDateChange); if (isToday) { updateSalePrice(); updateQuantityLabel(); } renderVentasList(); }
         function updateSalePrice() { const select = document.getElementById('regSelectProducto'); const cantidadInput = document.getElementById('regCantidadVendida'); const precioTotalInput = document.getElementById('regPrecioVenta'); const hint = document.getElementById('precio-unitario-hint'); if (!select || !cantidadInput || !precioTotalInput || !hint) return; const selectedOption = select.options[select.selectedIndex]; let pvpUnitario = 0; if (selectedOption && selectedOption.value) { const producto = productos.find(p => p.id === parseInt(selectedOption.value)); if (producto) pvpUnitario = producto['PVP Real (S/)']; } hint.textContent = `PVP unitario sugerido: S/ ${pvpUnitario.toFixed(2)} por unidad/kg/L`; const cantidadDecimal = parseFractionToFloat(cantidadInput.value); if (isNaN(cantidadDecimal) || cantidadDecimal <= 0) { precioTotalInput.value = ''; if (cantidadInput.value) { hint.textContent = 'Error en Cantidad. Use 1, 0.5, 1/2, etc.'; precioTotalInput.classList.add('border-red-500'); } return; } precioTotalInput.classList.remove('border-red-500'); precioTotalInput.value = (pvpUnitario * cantidadDecimal).toFixed(2); }
-        function renderVentasList() { const listContainer = document.getElementById('ventas-list'); if (!listContainer) return; if (ventasDiarias.length === 0) { listContainer.innerHTML = '<p class="text-gray-500 text-sm">No hay ventas registradas para la fecha seleccionada.</p>'; return; } listContainer.innerHTML = ventasDiarias.slice().reverse().map((venta, index) => { const pagoColor = venta['Método de Pago'] === 'Yape' ? 'bg-indigo-100 text-indigo-800' : 'bg-green-100 text-green-800'; const displayCantidad = parseFloat(venta['Cantidad']).toFixed(2).replace(/\.00$/, ''); const time = new Date(venta['Fecha y Hora']).toLocaleTimeString('es-PE') || venta['Fecha y Hora'].split(' ')[1]; return ` <div id="venta-${index}" class="flex flex-wrap md:flex-row justify-between items-center p-3 bg-gray-50 border border-gray-200 rounded-lg"> <div class="font-medium text-gray-800 w-full md:w-1/2 mb-2 md:mb-0"> ${displayCantidad}x ${venta['Producto']} <span class="text-xs text-gray-500 ml-2">(${venta['Fecha y Hora'].split(' ')[1]})</span> </div> <div class="text-right flex flex-col sm:flex-row space-x-0 sm:space-x-4 w-full md:w-1/2 items-end md:items-center justify-end"> <span class="text-xs font-medium ${pagoColor} px-2 py-0.5 rounded-full mb-1 sm:mb-0">${venta['Método de Pago']}</span> <p class="text-sm font-semibold">Total: S/ ${venta['Precio Total (S/)'].toFixed(2)}</p> <p class="text-sm text-green-600 font-bold ml-0 sm:ml-4">G: S/ ${venta['Ganancia (S/)'].toFixed(2)}</p> <!-- Botones de acción --> <div class="flex space-x-2"> <button onclick="editVenta(${index})" class="p-1 text-blue-500 hover:text-blue-700"> <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> </button> <button onclick="deleteVenta(${index})" class="p-1 text-red-500 hover:text-red-700"> <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg> </button> </div> </div> </div> `; }).join(''); }
+        function renderVentasList() { const listContainer = document.getElementById('ventas-list'); if (!listContainer) return; if (ventasDiarias.length === 0) { listContainer.innerHTML = '<p class="text-gray-500 text-sm">No hay ventas registradas para la fecha seleccionada.</p>'; return; } listContainer.innerHTML = ventasDiarias.slice().reverse().map((venta) => { const pagoColor = venta['Método de Pago'] === 'Yape' ? 'bg-indigo-100 text-indigo-800' : 'bg-green-100 text-green-800'; const displayCantidad = parseFloat(venta['Cantidad']).toFixed(2).replace(/\.00$/, ''); const time = new Date(venta['Fecha y Hora']).toLocaleTimeString('es-PE') || venta['Fecha y Hora'].split(' ')[1]; return ` <div class="flex flex-wrap md:flex-row justify-between items-center p-3 bg-gray-50 border border-gray-200 rounded-lg"> <div class="font-medium text-gray-800 w-full md:w-1/2 mb-2 md:mb-0"> ${displayCantidad}x ${venta['Producto']} <span class="text-xs text-gray-500 ml-2">(${venta['Fecha y Hora'].split(' ')[1]})</span> </div> <div class="text-right flex flex-col sm:flex-row space-x-0 sm:space-x-4 w-full md:w-1/2 items-end md:items-center justify-end"> <span class="text-xs font-medium ${pagoColor} px-2 py-0.5 rounded-full mb-1 sm:mb-0">${venta['Método de Pago']}</span> <p class="text-sm font-semibold">Total: S/ ${venta['Precio Total (S/)'].toFixed(2)}</p> <p class="text-sm text-green-600 font-bold ml-0 sm:ml-4">G: S/ ${venta['Ganancia (S/)'].toFixed(2)}</p> </div> </div> `; }).join(''); }
         function renderGestionInventario() { const container = document.getElementById('content-inventario'); if (container.classList.contains('hidden')) return; container.innerHTML = ` <h2 class="text-2xl font-semibold mb-4 text-gray-700">Lista y Edición de Productos</h2> <p class="text-sm text-gray-500 mb-6">Los cambios se guardan localmente en tu navegador de forma automática.</p> <button onclick="addProduct()" class="mb-4 px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors shadow flex items-center"> <i data-lucide="plus" class="w-5 h-5 mr-2"></i> Añadir Nuevo Producto </button> <div class="overflow-x-auto rounded-lg border"> <table class="min-w-full divide-y divide-gray-200"> <thead class="bg-gray-100"> <tr> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Producto</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Costo (S/)</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">PVP Sugerido (S/)</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">PVP Real (S/)</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Margen Actual (S/)</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Acción</th> </tr> </thead> <tbody id="inventory-table-body" class="bg-white divide-y divide-gray-200"></tbody> </table> </div> `; renderInventoryTable(); safeCreateIcons(); }
         function renderInventoryTable() { const tbody = document.getElementById('inventory-table-body'); if (!tbody) return; tbody.innerHTML = productos.map(p => { const costo = p['Costo (S/)']; const pvpReal = p['PVP Real (S/)']; const margenActual = pvpReal - costo; const pvpSugerido = (costo * 1.20).toFixed(2); const margenColor = margenActual > 0 ? 'text-green-600' : (margenActual < 0 ? 'text-red-500' : 'text-gray-500'); return ` <tr id="row-${p.id}" class="hover:bg-gray-50 transition-colors"> <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900"><input type="text" id="name-${p.id}" value="${p['Producto']}" class="input-inline" /></td> <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500"><input type="number" id="cost-${p.id}" value="${costo.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td> <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${pvpSugerido}</td> <td class="px-3 py-2 whitespace-nowrap"><input type="number" id="pvp-${p.id}" value="${pvpReal.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td> <td class="px-3 py-2 whitespace-nowrap text-sm font-bold ${margenColor}">S/ ${margenActual.toFixed(2)}</td> <td class="px-3 py-2 whitespace-nowrap text-sm space-x-2"> <button onclick="saveProductChanges(${p.id})" class="px-2 py-1 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors text-xs shadow">Guardar</button> <button onclick="confirmDelete(${p.id}, '${p['Producto']}')" class="px-2 py-1 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors text-xs shadow">Eliminar</button> </td> </tr> `; }).join(''); }
         function alertMessage(message, color) { let msgBox = document.getElementById('inventory-msg'); if (!msgBox) { msgBox = document.createElement('div'); msgBox.id = 'inventory-msg'; document.body.appendChild(msgBox); } const bgColor = { green: 'bg-green-500', red: 'bg-red-500', blue: 'bg-blue-500' }[color] || 'bg-gray-700'; msgBox.className = `fixed top-4 right-4 z-50 p-3 rounded-lg shadow-xl text-white font-semibold transition-opacity duration-300 ${bgColor}`; msgBox.textContent = message; msgBox.style.opacity = '1'; setTimeout(() => { msgBox.style.opacity = '0'; }, 3000); }
