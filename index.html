@@ -51,6 +51,12 @@
 </head>
 <body class="p-4 sm:p-8">
 
+    <!-- ELEMENTO DE CARGA -->
+    <div id="loader" class="fixed inset-0 bg-white bg-opacity-80 flex flex-col justify-center items-center z-50">
+        <h2 class="text-2xl font-semibold text-gray-700">Cargando Sistema...</h2>
+        <p class="text-gray-500 mt-2">Sincronizando datos con la nube, por favor espera.</p>
+    </div>
+
     <div id="app-container" style="display: none;">
         <div class="max-w-6xl mx-auto">
             <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Sistema de Gestión de Bodega</h1>
@@ -311,15 +317,37 @@
         }
 
         // --- INICIALIZACIÓN Y CONTROL DE ACCESO ---
-        document.addEventListener('DOMContentLoaded', async () => {
-            const appContainer = document.getElementById('app-container');
-            // Contraseña eliminada: la aplicación ahora es de acceso público.
-            appContainer.style.display = 'block';
-            initializeProducts();
-            ventasDiarias = await fetchSalesForDate(selectedDate);
-            renderizarTodo();
-            lucideScript.onload = safeCreateIcons;
-        });
+document.addEventListener('DOMContentLoaded', async () => {
+    const appContainer = document.getElementById('app-container');
+    const loader = document.getElementById('loader');
+    
+    // Contraseña eliminada: la aplicación ahora es de acceso público.
+    // Primero, inicializamos la estructura de productos localmente.
+    initializeProducts(); 
+    
+    try {
+        // Esperamos a que las ventas del día se carguen.
+        ventasDiarias = await fetchSalesForDate(selectedDate);
+        
+        // Una vez que todo está listo, mostramos la app y ocultamos el cargador.
+        appContainer.style.display = 'block';
+        loader.style.display = 'none';
+        
+        // Renderizamos la interfaz con los datos ya cargados.
+        renderizarTodo();
+        
+        // Cargamos los iconos al final.
+        lucideScript.onload = safeCreateIcons;
+
+    } catch (error) {
+        // Si hay un error crítico al cargar, lo mostramos en el loader.
+        loader.innerHTML = `<div class="text-center p-4">
+            <h2 class="text-2xl font-semibold text-red-600">Error de Conexión</h2>
+            <p class="text-gray-600 mt-2">No se pudo cargar la información de la base de datos.</p>
+            <p class="text-xs text-gray-500 mt-4">${error.message}</p>
+        </div>`;
+    }
+});
 
         async function handleDateChange(event) {
             selectedDate = event.target.value;
