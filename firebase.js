@@ -20,11 +20,7 @@ const db = getFirestore(app);
 
 // --- Funciones de Interacción con Firestore ---
 
-/**
- * Guarda todos los datos de la aplicación en un único documento de Firestore.
- * @param {object} data - El objeto que contiene los productos y las ventas.
- */
-async function saveDataToFirebase(data) {
+export async function saveDataToFirebase(data) {
     try {
         const docRef = doc(db, "bodega", "datos");
         await setDoc(docRef, data);
@@ -35,11 +31,7 @@ async function saveDataToFirebase(data) {
     }
 }
 
-/**
- * Carga todos los datos de la aplicación desde Firestore.
- * @returns {Promise<object|null>} - Los datos de la aplicación o null si no existen.
- */
-async function loadDataFromFirebase() {
+export async function loadDataFromFirebase() {
     try {
         const docRef = doc(db, "bodega", "datos");
         const docSnap = await getDoc(docRef);
