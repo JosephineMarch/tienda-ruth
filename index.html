@@ -6,6 +6,10 @@
     <title>Sistema de Gestión de Bodega</title>
     <!-- Carga de Tailwind CSS para un diseño moderno y responsivo -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDKs -->
+    <script type="module" src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+    <script type="module" src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
+    <script type="module" src="./firebase.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -56,11 +60,15 @@
     <div id="app-container" style="display: none;">
         <div class="max-w-6xl mx-auto">
             <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Sistema de Gestión de Bodega</h1>
-          <!-- BOTÓN DE SINCRONIZACIÓN -->
-<div class="mb-8 flex justify-center">
-    <button id="sync-button" onclick="syncAllDataWithSheet()" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition-all shadow-lg flex items-center space-x-2">
+          <!-- BOTONES DE ACCIÓN PRINCIPALES -->
+<div class="mb-8 flex justify-center space-x-4">
+    <button id="save-firebase-button" onclick="saveAllDataToFirebase()" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-lg flex items-center space-x-2">
          <i data-lucide="cloud-upload" class="w-5 h-5"></i>
-        <span>Sincronizar y Guardar en la Nube</span>
+        <span>Guardar en Firebase</span>
+    </button>
+    <button id="download-json-button" onclick="downloadJSON()" class="px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-800 transition-all shadow-lg flex items-center space-x-2">
+         <i data-lucide="download" class="w-5 h-5"></i>
+        <span>Descargar JSON</span>
     </button>
 </div>
 
@@ -96,9 +104,9 @@
         lucideScript.src = "https://unpkg.com/lucide@latest";
         document.head.appendChild(lucideScript);
 
-        // --- CONFIGURACIÓN DE LA API (REACTIVADA) ---
-        // PEGA AQUÍ TU NUEVA URL DE IMPLEMENTACIÓN
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyY8mjAnsZ9X3pf0PAXIaS9KSs1orL0CmNnTPjb5hqzwSNvbTQfivvvtxJWRfhp64QL/exec';
+        // --- CONFIGURACIÓN DE FIREBASE ---
+        // Las funciones de Firebase ahora están en firebase.js
+        // Se incluyen los scripts necesarios en el head.
 
         // --- ESTADO GLOBAL (sin cambios) ---
         let productos = [];
@@ -112,54 +120,46 @@
         const GANANCIA_MINIMA = 60.00;
         let nextProductId = 1;
 
-        // --- GESTIÓN DE BASE DE DATOS LOCAL (sin cambios) ---
-        function saveDataToLocal() { /* ... sin cambios ... */ }
-        function loadDataFromLocal() { /* ... sin cambios ... */ }
-        // (Pega aquí las funciones saveDataToLocal y loadDataFromLocal completas de la Fase 1)
-        function saveDataToLocal() { const appData = { productos: productos, ventas: todasLasVentas, nextProductId: nextProductId }; localStorage.setItem('bodegaData', JSON.stringify(appData)); console.log("Datos guardados en localStorage."); }
-        function loadDataFromLocal() { const appDataString = localStorage.getItem('bodegaData'); if (appDataString) { console.log("Cargando datos desde localStorage."); const appData = JSON.parse(appDataString); productos = appData.productos || []; todasLasVentas = appData.ventas || {}; nextProductId = appData.nextProductId || (productos.length > 0 ? Math.max(...productos.map(p => p.id)) + 1 : 1); ventasDiarias = todasLasVentas[selectedDate] || []; return true; } console.log("No se encontraron datos locales. Inicializando aplicación."); return false; }
+        // --- GESTIÓN DE BASE DE DATOS LOCAL Y FIREBASE ---
+        function saveDataToLocal() {
+            const appData = { productos: productos, ventas: todasLasVentas, nextProductId: nextProductId };
+            localStorage.setItem('bodegaData', JSON.stringify(appData));
+            console.log("Datos guardados en localStorage.");
+        }
 
+        function loadDataFromLocal() {
+            const appDataString = localStorage.getItem('bodegaData');
+            if (appDataString) {
+                console.log("Cargando datos desde localStorage.");
+                const appData = JSON.parse(appDataString);
+                productos = appData.productos || [];
+                todasLasVentas = appData.ventas || {};
+                nextProductId = appData.nextProductId || (productos.length > 0 ? Math.max(...productos.map(p => p.id)) + 1 : 1);
+                ventasDiarias = todasLasVentas[selectedDate] || [];
+                return true;
+            }
+            console.log("No se encontraron datos locales. Inicializando aplicación.");
+            return false;
+        }
 
-        // --- SINCRONIZACIÓN CON GOOGLE SHEETS (REACTIVADAS Y MEJORADAS) ---
-
-        // Función Maestra de Sincronización (para el botón)
-        async function syncAllDataWithSheet() {
-            const syncButton = document.getElementById('sync-button');
+        async function saveAllDataToFirebase() {
+            const syncButton = document.getElementById('save-firebase-button');
             const originalText = syncButton.innerHTML;
             syncButton.disabled = true;
-            syncButton.innerHTML = `<i data-lucide="loader-2" class="animate-spin w-5 h-5"></i><span>Sincronizando...</span>`;
+            syncButton.innerHTML = `<i data-lucide="loader-2" class="animate-spin w-5 h-5"></i><span>Guardando...</span>`;
             safeCreateIcons();
 
             try {
-                // Paso 1: Sincronizar el inventario
-                const inventoryPayload = productos.map(p => {
-                    const costo = p['Costo (S/)'];
-                    const pvpReal = p['PVP Real (S/)'];
-                    return {
-                        'Producto': p['Producto'],
-                        'Costo (S/)': costo,
-                        'PVP Sugerido (S/)': (costo * 1.20),
-                        'PVP Real (S/)': pvpReal,
-                        'Margen Actual (S/)': pvpReal - costo,
-                        'Unidad': p['Unidad']
-                    };
-                });
-                
-                console.log("Enviando inventario para sincronización:", inventoryPayload);
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'syncInventory', payload: inventoryPayload })
-                });
-
-                const result = await response.json();
-                if (result.status !== "success") throw new Error(result.message);
-                
-                alertMessage('¡Éxito! El inventario se ha guardado en la nube.', 'green');
-
+                const dataToSave = {
+                    productos: productos,
+                    ventas: todasLasVentas,
+                    nextProductId: nextProductId
+                };
+                await saveDataToFirebase(dataToSave);
+                alertMessage('¡Éxito! Los datos se han guardado en la nube.', 'green');
             } catch (error) {
-                console.error('Error al sincronizar:', error);
-                alertMessage(`Error al sincronizar: ${error.message}`, 'red');
+                console.error('Error al guardar en Firebase:', error);
+                alertMessage(`Error al guardar en la nube: ${error.message}`, 'red');
             } finally {
                 syncButton.disabled = false;
                 syncButton.innerHTML = originalText;
@@ -167,29 +167,27 @@
             }
         }
         
-        // Se mantiene para añadir ventas una por una
-        async function addSaleToSheet(saleData) {
-            try {
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'addSale', sheetName: selectedDate, payload: saleData })
-                });
-                const result = await response.json();
-                if (result.status !== "success") throw new Error(result.message);
-                console.log('Venta sincronizada con la nube.');
-            } catch (error) {
-                console.error('Error al añadir venta a la hoja:', error);
-                alertMessage(`La venta se guardó localmente, pero falló al guardar en la nube: ${error.message}`, 'red');
-            }
+        function downloadJSON() {
+            const dataStr = JSON.stringify({
+                productos: productos,
+                ventas: todasLasVentas,
+                nextProductId: nextProductId
+            }, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            
+            const exportFileDefaultName = 'bodega_data.json';
+            
+            let linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
         }
-        
-        // La carga inicial de ventas AÚN no se hará desde la nube para mantener la velocidad
-        // Esta función por ahora solo carga desde el objeto local.
+
         async function fetchSalesForDate(dateString) {
             ventasDiarias = todasLasVentas[dateString] || [];
             return ventasDiarias;
         }
+
 
         // --- MODIFICACIÓN FINAL EN registrarVenta ---
 
@@ -205,9 +203,8 @@
             ventasDiarias = todasLasVentas[selectedDate];
             
             saveDataToLocal(); // Guarda en local inmediatamente
-            
-            // Y AHORA, TAMBIÉN INTENTA GUARDAR EN LA NUBE
-            addSaleToSheet(nuevaVenta);
+            saveAllDataToFirebase(); // Guarda en Firebase
+
 
             msg.textContent = `Venta registrada. Ganancia: S/ ${gananciaVenta.toFixed(2)}`;
             msg.className = 'mt-3 text-sm text-center text-green-500 font-semibold';
@@ -222,6 +219,7 @@
                 ventasDiarias.splice(reversedIndex, 1);
                 todasLasVentas[selectedDate] = ventasDiarias;
                 saveDataToLocal();
+                saveAllDataToFirebase();
                 renderizarTodo();
             }
         }
@@ -284,9 +282,8 @@
             venta['PVP Unitario (S/)'] = precioVentaUnitario;
             venta['Ganancia (S/)'] = gananciaVenta;
 
-            todasLasVentas[selectedDate] = ventasDiarias;
             saveDataToLocal();
-            renderizarTodo();
+            saveAllDataToFirebase();
         }
 
         function cancelEdit() {
@@ -297,12 +294,35 @@
         // Pega aquí todas las demás funciones: initializeProducts, handleDateChange, 
         // saveProductChanges, confirmDelete, addProduct, y todas las de renderizado.
         // ...
-        document.addEventListener('DOMContentLoaded', async () => { const appContainer = document.getElementById('app-container'); if (!loadDataFromLocal()) { initializeProducts(); } appContainer.style.display = 'block'; renderizarTodo(); lucideScript.onload = safeCreateIcons; });
-        function initializeProducts() { const initialData = [ { nombre: "Aceite vegetal Deleite 1L", costo: 7.50 }, { nombre: "Aceite vegetal Patrona 1L", costo: 8.00 }, { nombre: "Aceite vegetal Primor 1L", costo: 9.20 }, { nombre: "Arroz 1 kg", costo: 4.00 }, { nombre: "Avena clásica 3 ositos (bolsa)", costo: 4.80 }, { nombre: "Avena en Hojuelas Quaker (caja)", costo: 6.50 }, { nombre: "Avena quinua 3 ositos (bolsa)", costo: 5.20 }, { nombre: "Azúcar 1kg", costo: 4.30 }, { nombre: "Bebida (Brut/Cava) Marca no clara", costo: 15.00 }, { nombre: "Bolsas de Granos Florida (varios)", costo: 3.50 }, { nombre: "Caldos Maggi (cubo x 6)", costo: 2.80 }, { nombre: "Canela (bolsa pequeña)", costo: 1.50 }, { nombre: "Chocolate de taza (tableta)", costo: 5.50 }, { nombre: "Chocolate en Barra Sublime (unid)", costo: 1.80 }, { nombre: "Cocoa winter's (lata)", costo: 7.00 }, { nombre: "Conserva Florida (atún)", costo: 3.80 }, { nombre: "Conserva Gloria (atún)", costo: 3.50 }, { nombre: "Detergente en Polvo Noble 1kg", costo: 7.50 }, { nombre: "Esencia de Vainilla Katita Vainilla", costo: 3.00 }, { nombre: "Fideos sopa Anita 250g", costo: 1.50 }, { nombre: "Fideos tallarin Anita 500g", costo: 2.40 }, { nombre: "Filtrante Anis Herbi (caja 25u)", costo: 4.50 }, { nombre: "Filtrante manzanilla McColin's", costo: 4.80 }, { nombre: "Filtrante Te bolsita (caja 25u)", costo: 3.50 }, { nombre: "Fosforo (caja)", costo: 0.80 }, { nombre: "Granos/Legumbres Compass 500g", costo: 4.00 }, { nombre: "Harina 1kg", costo: 3.20 }, { nombre: "Harina de Trigo Medalla 1kg", costo: 3.50 }, { nombre: "Harina Preparada/Maicena Maizena Duryea", costo: 5.50 }, { nombre: "Hongos laurel (bolsa pequeña)", costo: 1.00 }, { nombre: "Leche condensada (lata)", costo: 4.80 }, { nombre: "Leche Bonlé (lata)", costo: 2.90 }, { nombre: "Leche Bonlé (caja 1L)", costo: 3.80 }, { nombre: "Leche en bolsa 1L", costo: 3.20 }, { nombre: "Leche Gloria (caja 1L)", costo: 4.20 }, { nombre: "Leche Gloria (chica lata)", costo: 3.00 }, { nombre: "Leche Gloria (grande lata)", costo: 3.90 }, { nombre: "Leche Gloria (niños caja)", costo: 4.50 }, { nombre: "Leche Gloria zero lactosa (lata)", costo: 3.50 }, { nombre: "Leche Gloria zero lactosa (caja)", costo: 4.80 }, { nombre: "Leche Laive (lata)", costo: 3.10 }, { nombre: "Leche Laive sin lactosa (caja)", costo: 4.90 }, { nombre: "Leche Pura vida (chica lata)", costo: 2.80 }, { nombre: "Leche Pura vida (grande lata)", costo: 3.70 }, { nombre: "Lenteja 1 kg", costo: 6.00 }, { nombre: "Maizena Duryea", costo: 5.50 }, { nombre: "Mani (bolsa pequeña)", costo: 1.50 }, { nombre: "Mayonesa Alacena (sachet)", costo: 2.00 }, { nombre: "Mezcla Láctea Pura Vida (caja)", costo: 3.50 }, { nombre: "Papel Higiénico Jade (rollo)", costo: 1.20 }, { nombre: "Papel Higiénico Noble 2 rollos", costo: 3.00 }, { nombre: "Papel Higiénico Paracas 4 rollos", costo: 6.00 }, { nombre: "Papel Higiénico Tull 6 rollos", costo: 8.50 }, { nombre: "Papel servilleta Sublime", costo: 0.50 }, { nombre: "Papel Toalla Nova (rollo)", costo: 5.00 }, { nombre: "Papel Toalla Paracas (rollo)", costo: 4.00 }, { nombre: "Pimienta comino (bolsa pequeña)", costo: 1.00 }, { nombre: "Sala de tomate Don Vittorio", costo: 2.50 }, { nombre: "Sillao Ajinomoto (botella)", costo: 4.00 }, { nombre: "Sillao Kikí (botella)", costo: 3.80 }, { nombre: "Sopas/Condimentos McCrispy's (o similar)", costo: 1.50 }, { nombre: "Sopas/Condimentos Sibarita (o similar)", costo: 1.20 }, { nombre: "Vainilla Katita", costo: 3.00 }, ]; productos = initialData.map((p, i) => ({ id: i + 1, 'Producto': p.nombre, 'Costo (S/)': p.costo, 'PVP Real (S/)': parseFloat((p.costo * 1.20).toFixed(2)), 'Unidad': getUnitFromProductName(p.nombre) })); nextProductId = productos.length + 1; saveDataToLocal(); }
+        document.addEventListener('DOMContentLoaded', async () => {
+            const appContainer = document.getElementById('app-container');
+            let dataLoaded = false;
+
+            // Intenta cargar desde Firebase
+            const firebaseData = await loadDataFromFirebase();
+            if (firebaseData) {
+                productos = firebaseData.productos || [];
+                todasLasVentas = firebaseData.ventas || {};
+                nextProductId = firebaseData.nextProductId || (productos.length > 0 ? Math.max(...productos.map(p => p.id)) + 1 : 1);
+                ventasDiarias = todasLasVentas[selectedDate] || [];
+                dataLoaded = true;
+            } else if (loadDataFromLocal()) { // Si no hay datos en Firebase, intenta cargar desde LocalStorage
+                dataLoaded = true;
+            }
+
+            if (!dataLoaded) {
+                initializeProducts();
+            }
+
+            appContainer.style.display = 'block';
+            renderizarTodo();
+            lucideScript.onload = safeCreateIcons;
+        });
+        function initializeProducts() { const initialData = [ { nombre: "Aceite vegetal Deleite 1L", costo: 7.50 }, { nombre: "Aceite vegetal Patrona 1L", costo: 8.00 }, { nombre: "Aceite vegetal Primor 1L", costo: 9.20 }, { nombre: "Arroz 1 kg", costo: 4.00 }, { nombre: "Avena clásica 3 ositos (bolsa)", costo: 4.80 }, { nombre: "Avena en Hojuelas Quaker (caja)", costo: 6.50 }, { nombre: "Avena quinua 3 ositos (bolsa)", costo: 5.20 }, { nombre: "Azúcar 1kg", costo: 4.30 }, { nombre: "Bebida (Brut/Cava) Marca no clara", costo: 15.00 }, { nombre: "Bolsas de Granos Florida (varios)", costo: 3.50 }, { nombre: "Caldos Maggi (cubo x 6)", costo: 2.80 }, { nombre: "Canela (bolsa pequeña)", costo: 1.50 }, { nombre: "Chocolate de taza (tableta)", costo: 5.50 }, { nombre: "Chocolate en Barra Sublime (unid)", costo: 1.80 }, { nombre: "Cocoa winter's (lata)", costo: 7.00 }, { nombre: "Conserva Florida (atún)", costo: 3.80 }, { nombre: "Conserva Gloria (atún)", costo: 3.50 }, { nombre: "Detergente en Polvo Noble 1kg", costo: 7.50 }, { nombre: "Esencia de Vainilla Katita Vainilla", costo: 3.00 }, { nombre: "Fideos sopa Anita 250g", costo: 1.50 }, { nombre: "Fideos tallarin Anita 500g", costo: 2.40 }, { nombre: "Filtrante Anis Herbi (caja 25u)", costo: 4.50 }, { nombre: "Filtrante manzanilla McColin's", costo: 4.80 }, { nombre: "Filtrante Te bolsita (caja 25u)", costo: 3.50 }, { nombre: "Fosforo (caja)", costo: 0.80 }, { nombre: "Granos/Legumbres Compass 500g", costo: 4.00 }, { nombre: "Harina 1kg", costo: 3.20 }, { nombre: "Harina de Trigo Medalla 1kg", costo: 3.50 }, { nombre: "Harina Preparada/Maicena Maizena Duryea", costo: 5.50 }, { nombre: "Hongos laurel (bolsa pequeña)", costo: 1.00 }, { nombre: "Leche condensada (lata)", costo: 4.80 }, { nombre: "Leche Bonlé (lata)", costo: 2.90 }, { nombre: "Leche Bonlé (caja 1L)", costo: 3.80 }, { nombre: "Leche en bolsa 1L", costo: 3.20 }, { nombre: "Leche Gloria (caja 1L)", costo: 4.20 }, { nombre: "Leche Gloria (chica lata)", costo: 3.00 }, { nombre: "Leche Gloria (grande lata)", costo: 3.90 }, { nombre: "Leche Gloria (niños caja)", costo: 4.50 }, { nombre: "Leche Gloria zero lactosa (lata)", costo: 3.50 }, { nombre: "Leche Gloria zero lactosa (caja)", costo: 4.80 }, { nombre: "Leche Laive (lata)", costo: 3.10 }, { nombre: "Leche Laive sin lactosa (caja)", costo: 4.90 }, { nombre: "Leche Pura vida (chica lata)", costo: 2.80 }, { nombre: "Leche Pura vida (grande lata)", costo: 3.70 }, { nombre: "Lenteja 1 kg", costo: 6.00 }, { nombre: "Maizena Duryea", costo: 5.50 }, { nombre: "Mani (bolsa pequeña)", costo: 1.50 }, { nombre: "Mayonesa Alacena (sachet)", costo: 2.00 }, { nombre: "Mezcla Láctea Pura Vida (caja)", costo: 3.50 }, { nombre: "Papel Higiénico Jade (rollo)", costo: 1.20 }, { nombre: "Papel Higiénico Noble 2 rollos", costo: 3.00 }, { nombre: "Papel Higiénico Paracas 4 rollos", costo: 6.00 }, { nombre: "Papel Higiénico Tull 6 rollos", costo: 8.50 }, { nombre: "Papel servilleta Sublime", costo: 0.50 }, { nombre: "Papel Toalla Nova (rollo)", costo: 5.00 }, { nombre: "Papel Toalla Paracas (rollo)", costo: 4.00 }, { nombre: "Pimienta comino (bolsa pequeña)", costo: 1.00 }, { nombre: "Sala de tomate Don Vittorio", costo: 2.50 }, { nombre: "Sillao Ajinomoto (botella)", costo: 4.00 }, { nombre: "Sillao Kikí (botella)", costo: 3.80 }, { nombre: "Sopas/Condimentos McCrispy's (o similar)", costo: 1.50 }, { nombre: "Sopas/Condimentos Sibarita (o similar)", costo: 1.20 }, { nombre: "Vainilla Katita", costo: 3.00 }, ]; productos = initialData.map((p, i) => ({ id: i + 1, 'Producto': p.nombre, 'Costo (S/)': p.costo, 'PVP Real (S/)': parseFloat((p.costo * 1.20).toFixed(2)), 'Unidad': getUnitFromProductName(p.nombre) })); nextProductId = productos.length + 1; saveDataToLocal(); saveAllDataToFirebase(); }
         async function handleDateChange(event) { selectedDate = event.target.value; await fetchSalesForDate(selectedDate); renderizarTodo(); }
-        function saveProductChanges(productId) { const nameInput = document.getElementById(`name-${productId}`); const costInput = document.getElementById(`cost-${productId}`); const pvpInput = document.getElementById(`pvp-${productId}`); const newName = nameInput.value.trim(); const newCost = parseFloat(costInput.value); const newPVP = parseFloat(pvpInput.value); if (!newName) { alertMessage('El nombre del producto no puede estar vacío.', 'red'); return; } if (isNaN(newCost) || newCost < 0) { alertMessage('El Costo debe ser un número positivo.', 'red'); return; } if (isNaN(newPVP) || newPVP < 0) { alertMessage('El PVP Real debe ser un número positivo.', 'red'); return; } const productIndex = productos.findIndex(p => p.id === productId); if (productIndex !== -1) { productos[productIndex]['Producto'] = newName; productos[productIndex]['Costo (S/)'] = newCost; productos[productIndex]['PVP Real (S/)'] = newPVP; productos[productIndex]['Unidad'] = getUnitFromProductName(newName); saveDataToLocal(); renderizarTodo(); alertMessage('Producto guardado localmente.', 'blue'); } }
-        function confirmDelete(productId, productName) { if (confirm(`¿Estás seguro de que quieres eliminar "${productName}"?`)) { productos = productos.filter(p => p.id !== productId); saveDataToLocal(); renderizarTodo(); } }
-        function addProduct() { const newProduct = { id: nextProductId++, 'Producto': "Nuevo Producto (kg, L o unid)", 'Costo (S/)': 1.00, 'PVP Real (S/)': 1.20, 'Unidad': 'unid' }; productos.push(newProduct); saveDataToLocal(); renderizarTodo(); setTimeout(() => { const newRow = document.getElementById(`row-${newProduct.id}`); if (newRow) { newRow.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById(`name-${newProduct.id}`).focus(); } }, 50); }
+        function saveProductChanges(productId) { const nameInput = document.getElementById(`name-${productId}`); const costInput = document.getElementById(`cost-${productId}`); const pvpInput = document.getElementById(`pvp-${productId}`); const newName = nameInput.value.trim(); const newCost = parseFloat(costInput.value); const newPVP = parseFloat(pvpInput.value); if (!newName) { alertMessage('El nombre del producto no puede estar vacío.', 'red'); return; } if (isNaN(newCost) || newCost < 0) { alertMessage('El Costo debe ser un número positivo.', 'red'); return; } if (isNaN(newPVP) || newPVP < 0) { alertMessage('El PVP Real debe ser un número positivo.', 'red'); return; } const productIndex = productos.findIndex(p => p.id === productId); if (productIndex !== -1) { productos[productIndex]['Producto'] = newName; productos[productIndex]['Costo (S/)'] = newCost; productos[productIndex]['PVP Real (S/)'] = newPVP; productos[productIndex]['Unidad'] = getUnitFromProductName(newName); saveDataToLocal(); saveAllDataToFirebase(); renderizarTodo(); alertMessage('Producto guardado localmente.', 'blue'); } }
+        function confirmDelete(productId, productName) { if (confirm(`¿Estás seguro de que quieres eliminar "${productName}"?`)) { productos = productos.filter(p => p.id !== productId); saveDataToLocal(); saveAllDataToFirebase(); renderizarTodo(); } }
+        function addProduct() { const newProduct = { id: nextProductId++, 'Producto': "Nuevo Producto (kg, L o unid)", 'Costo (S/)': 1.00, 'PVP Real (S/)': 1.20, 'Unidad': 'unid' }; productos.push(newProduct); saveDataToLocal(); saveAllDataToFirebase(); renderizarTodo(); setTimeout(() => { const newRow = document.getElementById(`row-${newProduct.id}`); if (newRow) { newRow.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById(`name-${newProduct.id}`).focus(); } }, 50); }
         function safeCreateIcons() { if (typeof lucide !== 'undefined' && lucide.createIcons) { lucide.createIcons(); } }
         function parseFractionToFloat(inputString) { if (!inputString) return NaN; const cleanedInput = String(inputString).trim().replace(',', '.'); const fractionMatch = cleanedInput.match(/^(\d+)\/(\d+)$/); if (fractionMatch) { const numerator = parseInt(fractionMatch[1], 10); const denominator = parseInt(fractionMatch[2], 10); if (denominator !== 0) return numerator / denominator; } const decimalValue = parseFloat(cleanedInput); return !isNaN(decimalValue) ? decimalValue : NaN; }
         function getUnitFromProductName(name) { name = name.toLowerCase(); if (name.includes('kg') || name.includes(' lenteja') || name.includes('harina') || name.includes('azúcar') || name.includes('arroz')) return 'kg'; if (name.includes('1l') || name.includes('litro') || name.includes('aceite')) return 'L'; return 'unid'; }
