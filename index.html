@@ -62,11 +62,11 @@
             <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Sistema de Gestión de Bodega</h1>
           <!-- BOTONES DE ACCIÓN PRINCIPALES -->
 <div class="mb-8 flex justify-center space-x-4">
-    <button id="save-firebase-button" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-lg flex items-center space-x-2">
+    <button id="save-firebase-button" onclick="saveAllDataToFirebase()" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-lg flex items-center space-x-2">
          <i data-lucide="cloud-upload" class="w-5 h-5"></i>
         <span>Guardar en Firebase</span>
     </button>
-    <button id="download-json-button" class="px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-800 transition-all shadow-lg flex items-center space-x-2">
+    <button id="download-json-button" onclick="downloadJSON()" class="px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-800 transition-all shadow-lg flex items-center space-x-2">
          <i data-lucide="download" class="w-5 h-5"></i>
         <span>Descargar JSON</span>
     </button>
@@ -98,7 +98,7 @@
         </div>
     </div>
 
-   <script type="module">
+   <script>
         // ... (el código de carga de lucide se mantiene) ...
         const lucideScript = document.createElement('script');
         lucideScript.src = "https://unpkg.com/lucide@latest";
@@ -142,7 +142,7 @@
             return false;
         }
 
-        async function saveAllDataToFirebase() {
+        window.saveAllDataToFirebase = async function() {
             const syncButton = document.getElementById('save-firebase-button');
             const originalText = syncButton.innerHTML;
             syncButton.disabled = true;
@@ -155,7 +155,7 @@
                     ventas: todasLasVentas,
                     nextProductId: nextProductId
                 };
-                await saveDataToFirebase(dataToSave);
+                await window.saveDataToFirebase(dataToSave);
                 alertMessage('¡Éxito! Los datos se han guardado en la nube.', 'green');
             } catch (error) {
                 console.error('Error al guardar en Firebase:', error);
@@ -165,9 +165,9 @@
                 syncButton.innerHTML = originalText;
                 safeCreateIcons();
             }
-        }
+        };
         
-        function downloadJSON() {
+        window.downloadJSON = function() {
             const dataStr = JSON.stringify({
                 productos: productos,
                 ventas: todasLasVentas,
@@ -181,7 +181,7 @@
             linkElement.setAttribute('href', dataUri);
             linkElement.setAttribute('download', exportFileDefaultName);
             linkElement.click();
-        }
+        };
 
         async function fetchSalesForDate(dateString) {
             ventasDiarias = todasLasVentas[dateString] || [];
@@ -238,10 +238,6 @@
             appContainer.style.display = 'block';
             renderizarTodo();
             lucideScript.onload = safeCreateIcons;
-
-            // Add event listeners for the new buttons
-            document.getElementById('save-firebase-button').addEventListener('click', saveAllDataToFirebase);
-            document.getElementById('download-json-button').addEventListener('click', downloadJSON);
         });
         function initializeProducts() { const initialData = [ { nombre: "Aceite vegetal Deleite 1L", costo: 7.50 }, { nombre: "Aceite vegetal Patrona 1L", costo: 8.00 }, { nombre: "Aceite vegetal Primor 1L", costo: 9.20 }, { nombre: "Arroz 1 kg", costo: 4.00 }, { nombre: "Avena clásica 3 ositos (bolsa)", costo: 4.80 }, { nombre: "Avena en Hojuelas Quaker (caja)", costo: 6.50 }, { nombre: "Avena quinua 3 ositos (bolsa)", costo: 5.20 }, { nombre: "Azúcar 1kg", costo: 4.30 }, { nombre: "Bebida (Brut/Cava) Marca no clara", costo: 15.00 }, { nombre: "Bolsas de Granos Florida (varios)", costo: 3.50 }, { nombre: "Caldos Maggi (cubo x 6)", costo: 2.80 }, { nombre: "Canela (bolsa pequeña)", costo: 1.50 }, { nombre: "Chocolate de taza (tableta)", costo: 5.50 }, { nombre: "Chocolate en Barra Sublime (unid)", costo: 1.80 }, { nombre: "Cocoa winter's (lata)", costo: 7.00 }, { nombre: "Conserva Florida (atún)", costo: 3.80 }, { nombre: "Conserva Gloria (atún)", costo: 3.50 }, { nombre: "Detergente en Polvo Noble 1kg", costo: 7.50 }, { nombre: "Esencia de Vainilla Katita Vainilla", costo: 3.00 }, { nombre: "Fideos sopa Anita 250g", costo: 1.50 }, { nombre: "Fideos tallarin Anita 500g", costo: 2.40 }, { nombre: "Filtrante Anis Herbi (caja 25u)", costo: 4.50 }, { nombre: "Filtrante manzanilla McColin's", costo: 4.80 }, { nombre: "Filtrante Te bolsita (caja 25u)", costo: 3.50 }, { nombre: "Fosforo (caja)", costo: 0.80 }, { nombre: "Granos/Legumbres Compass 500g", costo: 4.00 }, { nombre: "Harina 1kg", costo: 3.20 }, { nombre: "Harina de Trigo Medalla 1kg", costo: 3.50 }, { nombre: "Harina Preparada/Maicena Maizena Duryea", costo: 5.50 }, { nombre: "Hongos laurel (bolsa pequeña)", costo: 1.00 }, { nombre: "Leche condensada (lata)", costo: 4.80 }, { nombre: "Leche Bonlé (lata)", costo: 2.90 }, { nombre: "Leche Bonlé (caja 1L)", costo: 3.80 }, { nombre: "Leche en bolsa 1L", costo: 3.20 }, { nombre: "Leche Gloria (caja 1L)", costo: 4.20 }, { nombre: "Leche Gloria (chica lata)", costo: 3.00 }, { nombre: "Leche Gloria (grande lata)", costo: 3.90 }, { nombre: "Leche Gloria (niños caja)", costo: 4.50 }, { nombre: "Leche Gloria zero lactosa (lata)", costo: 3.50 }, { nombre: "Leche Gloria zero lactosa (caja)", costo: 4.80 }, { nombre: "Leche Laive (lata)", costo: 3.10 }, { nombre: "Leche Laive sin lactosa (caja)", costo: 4.90 }, { nombre: "Leche Pura vida (chica lata)", costo: 2.80 }, { nombre: "Leche Pura vida (grande lata)", costo: 3.70 }, { nombre: "Lenteja 1 kg", costo: 6.00 }, { nombre: "Maizena Duryea", costo: 5.50 }, { nombre: "Mani (bolsa pequeña)", costo: 1.50 }, { nombre: "Mayonesa Alacena (sachet)", costo: 2.00 }, { nombre: "Mezcla Láctea Pura Vida (caja)", costo: 3.50 }, { nombre: "Papel Higiénico Jade (rollo)", costo: 1.20 }, { nombre: "Papel Higiénico Noble 2 rollos", costo: 3.00 }, { nombre: "Papel Higiénico Paracas 4 rollos", costo: 6.00 }, { nombre: "Papel Higiénico Tull 6 rollos", costo: 8.50 }, { nombre: "Papel servilleta Sublime", costo: 0.50 }, { nombre: "Papel Toalla Nova (rollo)", costo: 5.00 }, { nombre: "Papel Toalla Paracas (rollo)", costo: 4.00 }, { nombre: "Pimienta comino (bolsa pequeña)", costo: 1.00 }, { nombre: "Sala de tomate Don Vittorio", costo: 2.50 }, { nombre: "Sillao Ajinomoto (botella)", costo: 4.00 }, { nombre: "Sillao Kikí (botella)", costo: 3.80 }, { nombre: "Sopas/Condimentos McCrispy's (o similar)", costo: 1.50 }, { nombre: "Sopas/Condimentos Sibarita (o similar)", costo: 1.20 }, { nombre: "Vainilla Katita", costo: 3.00 }, ]; productos = initialData.map((p, i) => ({ id: i + 1, 'Producto': p.nombre, 'Costo (S/)': p.costo, 'PVP Real (S/)': parseFloat((p.costo * 1.20).toFixed(2)), 'Unidad': getUnitFromProductName(p.nombre) })); nextProductId = productos.length + 1; saveDataToLocal(); saveAllDataToFirebase(); }
         async function handleDateChange(event) { selectedDate = event.target.value; await fetchSalesForDate(selectedDate); renderizarTodo(); }

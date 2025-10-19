@@ -20,7 +20,7 @@ const db = getFirestore(app);
 
 // --- Funciones de Interacción con Firestore ---
 
-export async function saveDataToFirebase(data) {
+window.saveDataToFirebase = async function(data) {
     try {
         const docRef = doc(db, "bodega", "datos");
         await setDoc(docRef, data);
@@ -29,9 +29,9 @@ export async function saveDataToFirebase(data) {
         console.error("Error al guardar datos en Firebase:", error);
         alert("Error al guardar los datos en la nube. Revisa la consola para más detalles.");
     }
-}
+};
 
-export async function loadDataFromFirebase() {
+window.loadDataFromFirebase = async function() {
     try {
         const docRef = doc(db, "bodega", "datos");
         const docSnap = await getDoc(docRef);
