@@ -5,13 +5,13 @@ import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/fireb
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyCU9pop79uF1o86SWQBqmEcZGy_TqjHHyU",
-  authDomain: "appcrea2.firebaseapp.com",
-  projectId: "appcrea2",
-  storageBucket: "appcrea2.firebasestorage.app",
-  messagingSenderId: "29240386891",
-  appId: "1:29240386891:web:5c1129e068e28ae2f774ce",
-  measurementId: "G-MKH024DS21"
+  apiKey: "__API_KEY__",
+  authDomain: "__AUTH_DOMAIN__",
+  projectId: "__PROJECT_ID__",
+  storageBucket: "__STORAGE_BUCKET__",
+  messagingSenderId: "__MESSAGING_SENDER_ID__",
+  appId: "__APP_ID__",
+  measurementId: "__MEASUREMENT_ID__"
 };
 
 // Initialize Firebase
