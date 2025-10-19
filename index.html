@@ -399,7 +399,11 @@
             const container = document.getElementById('content-registro');
             if (container.classList.contains('hidden')) return;
 
-            const today = new Date().toISOString().split('T')[0];
+            const hoy = new Date();
+            const anio = hoy.getFullYear();
+            const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+            const dia = String(hoy.getDate()).padStart(2, '0');
+            const today = `${anio}-${mes}-${dia}`;
             const isToday = selectedDate === today;
 
             const displayDateObj = new Date(selectedDate + 'T12:00:00Z');
