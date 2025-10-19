@@ -94,7 +94,7 @@
         document.head.appendChild(lucideScript);
 
         // --- CONFIGURACIÓN DE LA API ---
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxyTu_YKlFAsngfrBVQ7aw8l6-hvWM5ESjEx0cuYJuigWK0Dfks0bgvZ5uqlaXaf4Ek/exec';
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby7PGNrBa4ZEDOg0qqfTUMMtU5VqQfX8kd_S9nlMG13UEGeiRG_DXqC-mTaWe3p6yH7/exec';
 
         // --- ESTADO GLOBAL ---
         let productos = [];
@@ -549,7 +549,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const gananciaVenta = (precioVentaUnitario - costoUnitario) * cantidadDecimal;
 
             const nuevaVenta = {
-                'Fecha y Hora': new Date().toISOString(),
+                'Fecha y Hora': fechaHoraLocal,
                 'Producto': productoVendido['Producto'],
                 'Cantidad': cantidadDecimal,
                 'Unidad': productoVendido['Unidad'],
