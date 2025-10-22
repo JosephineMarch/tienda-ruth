@@ -59,6 +59,14 @@
     <div id="app-container" style="display: none;">
         <div class="max-w-6xl mx-auto">
             <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Sistema de Gestión de Bodega</h1>
+          <!-- BOTONES DE ACCIÓN PRINCIPALES -->
+<div class="mb-8 flex justify-center space-x-4">
+    <button id="download-csv-button" onclick="downloadCSV()" class="px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-800 transition-all shadow-lg flex items-center space-x-2">
+         <i data-lucide="download" class="w-5 h-5"></i>
+        <span>Descargar CSV</span>
+    </button>
+</div>
+
 
 
             <!-- DASHBOARD DE TARJETAS (Ganancia Mínima) -->
@@ -125,6 +133,66 @@
             }
             console.log("No se encontraron datos locales. Inicializando aplicación.");
             return false;
+        }
+
+        function convertToCSV(data) {
+            if (!data || data.length === 0) {
+                return "";
+            }
+            const headers = Object.keys(data[0]);
+            const csvRows = [];
+            csvRows.push(headers.join(','));
+
+            for (const row of data) {
+                const values = headers.map(header => {
+                    const val = row[header] === null || row[header] === undefined ? '' : row[header];
+                    const stringVal = String(val);
+                    if (stringVal.includes(',')) {
+                        return `"${stringVal.replace(/"/g, '""')}"`;
+                    }
+                    return stringVal;
+                });
+                csvRows.push(values.join(','));
+            }
+
+            return csvRows.join('\n');
+        }
+
+        window.downloadCSV = function() {
+            // For products
+            if (productos.length > 0) {
+                const productsCSV = convertToCSV(productos);
+                let productsDataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(productsCSV);
+                let productsLinkElement = document.createElement('a');
+                productsLinkElement.setAttribute('href', productsDataUri);
+                productsLinkElement.setAttribute('download', 'inventario.csv');
+                document.body.appendChild(productsLinkElement);
+                productsLinkElement.click();
+                document.body.removeChild(productsLinkElement);
+            }
+
+
+            // For sales
+            const allSales = [];
+            for (const date in todasLasVentas) {
+                for (const sale of todasLasVentas[date]) {
+                    allSales.push({
+                        'Fecha': date,
+                        ...sale
+                    });
+                }
+            }
+
+            if (allSales.length > 0) {
+                const salesCSV = convertToCSV(allSales);
+                let salesDataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(salesCSV);
+                let salesLinkElement = document.createElement('a');
+                salesLinkElement.setAttribute('href', salesDataUri);
+                salesLinkElement.setAttribute('download', 'ventas.csv');
+                document.body.appendChild(salesLinkElement);
+                salesLinkElement.click();
+                document.body.removeChild(salesLinkElement);
+            }
         }
         
         window.downloadJSON = function() {
