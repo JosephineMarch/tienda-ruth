@@ -6,61 +6,7 @@
     <title>Sistema de Gestión de Bodega</title>
     <!-- Carga de Tailwind CSS para un diseño moderno y responsivo -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase SDKs -->
-    <script type="module">
-        // Import the functions you need from the SDKs you need
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-analytics.js";
 
-        // Your web app's Firebase configuration
-        const firebaseConfig = {
-          apiKey: "AIzaSyCU9pop79uF1o86SWQBqmEcZGy_TqjHHyU",
-          authDomain: "appcrea2.firebaseapp.com",
-          projectId: "appcrea2",
-          storageBucket: "appcrea2.firebasestorage.app",
-          messagingSenderId: "29240386891",
-          appId: "1:29240386891:web:cab01f57e83aff07f774ce",
-          measurementId: "G-5YPBHJGF3F"
-        };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const analytics = getAnalytics(app);
-
-        // --- Funciones de Interacción con Firestore ---
-
-        window.saveDataToFirebase = async function(data) {
-            try {
-                const docRef = doc(db, "bodega", "datos");
-                await setDoc(docRef, data);
-                console.log("Datos guardados en Firebase.");
-            } catch (error) {
-                console.error("Error al guardar datos en Firebase:", error);
-                alert("Error al guardar los datos en la nube. Revisa la consola para más detalles.");
-            }
-        };
-
-        window.loadDataFromFirebase = async function() {
-            try {
-                const docRef = doc(db, "bodega", "datos");
-                const docSnap = await getDoc(docRef);
-
-                if (docSnap.exists()) {
-                    console.log("Datos cargados desde Firebase.");
-                    return docSnap.data();
-                } else {
-                    console.log("No se encontraron datos en Firebase. Se usarán los datos locales si existen.");
-                    return null;
-                }
-            } catch (error) {
-                console.error("Error al cargar datos desde Firebase:", error);
-                alert("Error al cargar los datos desde la nube. Se trabajará con datos locales. Revisa la consola para más detalles.");
-                return null;
-            }
-        }
-    </script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -113,17 +59,7 @@
     <div id="app-container" style="display: none;">
         <div class="max-w-6xl mx-auto">
             <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">Sistema de Gestión de Bodega</h1>
-          <!-- BOTONES DE ACCIÓN PRINCIPALES -->
-<div class="mb-8 flex justify-center space-x-4">
-    <button id="save-firebase-button" onclick="saveAllDataToFirebase()" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all shadow-lg flex items-center space-x-2">
-         <i data-lucide="cloud-upload" class="w-5 h-5"></i>
-        <span>Guardar en Firebase</span>
-    </button>
-    <button id="download-json-button" onclick="downloadJSON()" class="px-6 py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-800 transition-all shadow-lg flex items-center space-x-2">
-         <i data-lucide="download" class="w-5 h-5"></i>
-        <span>Descargar JSON</span>
-    </button>
-</div>
+
 
             <!-- DASHBOARD DE TARJETAS (Ganancia Mínima) -->
             <div id="dashboard" class="mb-8">
@@ -157,11 +93,7 @@
         lucideScript.src = "https://unpkg.com/lucide@latest";
         document.head.appendChild(lucideScript);
 
-        // --- CONFIGURACIÓN DE FIREBASE ---
-        // Las funciones de Firebase ahora están en firebase.js
-        // Se incluyen los scripts necesarios en el head.
-
-        // --- ESTADO GLOBAL (sin cambios) ---
+        // --- ESTADO GLOBAL ---
         let productos = [];
         let ventasDiarias = [];
         let todasLasVentas = {};
@@ -173,7 +105,7 @@
         const GANANCIA_MINIMA = 60.00;
         let nextProductId = 1;
 
-        // --- GESTIÓN DE BASE DE DATOS LOCAL Y FIREBASE ---
+        // --- GESTIÓN DE BASE DE DATOS LOCAL ---
         function saveDataToLocal() {
             const appData = { productos: productos, ventas: todasLasVentas, nextProductId: nextProductId };
             localStorage.setItem('bodegaData', JSON.stringify(appData));
@@ -194,31 +126,6 @@
             console.log("No se encontraron datos locales. Inicializando aplicación.");
             return false;
         }
-
-        window.saveAllDataToFirebase = async function() {
-            const syncButton = document.getElementById('save-firebase-button');
-            const originalText = syncButton.innerHTML;
-            syncButton.disabled = true;
-            syncButton.innerHTML = `<i data-lucide="loader-2" class="animate-spin w-5 h-5"></i><span>Guardando...</span>`;
-            safeCreateIcons();
-
-            try {
-                const dataToSave = {
-                    productos: productos,
-                    ventas: todasLasVentas,
-                    nextProductId: nextProductId
-                };
-                await window.saveDataToFirebase(dataToSave);
-                alertMessage('¡Éxito! Los datos se han guardado en la nube.', 'green');
-            } catch (error) {
-                console.error('Error al guardar en Firebase:', error);
-                alertMessage(`Error al guardar en la nube: ${error.message}`, 'red');
-            } finally {
-                syncButton.disabled = false;
-                syncButton.innerHTML = originalText;
-                safeCreateIcons();
-            }
-        };
         
         window.downloadJSON = function() {
             const dataStr = JSON.stringify({
@@ -227,9 +134,7 @@
                 nextProductId: nextProductId
             }, null, 2);
             const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-            
             const exportFileDefaultName = 'bodega_data.json';
-            
             let linkElement = document.createElement('a');
             linkElement.setAttribute('href', dataUri);
             linkElement.setAttribute('download', exportFileDefaultName);
@@ -241,11 +146,71 @@
             return ventasDiarias;
         }
 
-        // --- MODIFICACIÓN FINAL EN registrarVenta ---
-
+        // --- LÓGICA DE REGISTRO DE VENTA (MODIFICADA) ---
         function registrarVenta() {
-            // ... (toda la lógica para crear la nuevaVenta es la misma)
-            const select = document.getElementById('regSelectProducto'); const cantidadInput = document.getElementById('regCantidadVendida'); const precioTotalInput = document.getElementById('regPrecioVenta'); const pagoInput = document.getElementById('regMetodoPago'); const msg = document.getElementById('msg-venta'); const productoId = parseInt(select.value); const cantidadDecimal = parseFractionToFloat(cantidadInput.value); const precioTotal = parseFloat(precioTotalInput.value); const metodoPago = pagoInput.value; const productoVendido = productos.find(p => p.id === productoId); if (!productoVendido || isNaN(cantidadDecimal) || cantidadDecimal <= 0 || isNaN(precioTotal) || precioTotal <= 0) { msg.textContent = 'Error: Complete todos los campos correctamente.'; msg.className = 'mt-3 text-sm text-center text-red-500 font-semibold'; return; } const costoUnitario = productoVendido['Costo (S/)']; const precioVentaUnitario = precioTotal / cantidadDecimal; const gananciaVenta = (precioVentaUnitario - costoUnitario) * cantidadDecimal; const ahora = new Date(); const fechaHoraLocal = `${ahora.toLocaleDateString('es-PE')} ${ahora.toLocaleTimeString('es-PE')}`;
+            const select = document.getElementById('regSelectProducto');
+            const cantidadInput = document.getElementById('regCantidadVendida');
+            const precioTotalInput = document.getElementById('regPrecioVenta');
+            const pagoInput = document.getElementById('regMetodoPago');
+            const msg = document.getElementById('msg-venta');
+            
+            let productoId = select.value;
+            let productoVendido;
+
+            // Caso 1: Se está registrando un producto nuevo
+            if (productoId === '--nuevo--') {
+                const nuevoNombre = document.getElementById('nuevoNombre').value.trim();
+                const nuevoCosto = parseFloat(document.getElementById('nuevoCosto').value);
+                const nuevoPVP = parseFloat(document.getElementById('nuevoPVP').value);
+                const nuevaUnidad = document.getElementById('nuevaUnidad').value;
+
+                if (!nuevoNombre || isNaN(nuevoCosto) || nuevoCosto <= 0 || isNaN(nuevoPVP) || nuevoPVP <= 0) {
+                    msg.textContent = 'Error: Complete los datos del nuevo producto correctamente.';
+                    msg.className = 'mt-3 text-sm text-center text-red-500 font-semibold';
+                    return;
+                }
+
+                const nuevoProducto = {
+                    id: nextProductId++,
+                    'Producto': nuevoNombre,
+                    'Costo (S/)': nuevoCosto,
+                    'PVP Real (S/)': nuevoPVP,
+                    'Unidad': nuevaUnidad
+                };
+                productos.push(nuevoProducto);
+                productoVendido = nuevoProducto;
+                productoId = nuevoProducto.id;
+                
+                // Opcional: Seleccionar el nuevo producto en el dropdown principal
+                // y recargar la interfaz para que aparezca en todos lados.
+                renderizarTodo(); // Recarga la UI para que el nuevo producto aparezca en la lista
+                setTimeout(() => {
+                    const mainSelect = document.getElementById('regSelectProducto');
+                    if(mainSelect) mainSelect.value = productoId;
+                }, 100);
+
+
+            } else {
+                productoId = parseInt(productoId);
+                productoVendido = productos.find(p => p.id === productoId);
+            }
+
+            const cantidadDecimal = parseFractionToFloat(cantidadInput.value);
+            const precioTotal = parseFloat(precioTotalInput.value);
+            const metodoPago = pagoInput.value;
+
+            if (!productoVendido || isNaN(cantidadDecimal) || cantidadDecimal <= 0 || isNaN(precioTotal) || precioTotal <= 0) {
+                msg.textContent = 'Error: Complete todos los campos de venta correctamente.';
+                msg.className = 'mt-3 text-sm text-center text-red-500 font-semibold';
+                return;
+            }
+
+            const costoUnitario = productoVendido['Costo (S/)'];
+            const precioVentaUnitario = precioTotal / cantidadDecimal;
+            const gananciaVenta = (precioVentaUnitario - costoUnitario) * cantidadDecimal;
+            const ahora = new Date();
+            const fechaHoraLocal = `${ahora.toLocaleDateString('es-PE')} ${ahora.toLocaleTimeString('es-PE')}`;
+            
             const nuevaVenta = { 'Fecha y Hora': fechaHoraLocal, 'Producto': productoVendido['Producto'], 'Cantidad': cantidadDecimal, 'Unidad': productoVendido['Unidad'], 'Costo Unitario (S/)': costoUnitario, 'PVP Unitario (S/)': precioVentaUnitario, 'Precio Total (S/)': precioTotal, 'Método de Pago': metodoPago, 'Ganancia (S/)': gananciaVenta };
 
             if (!todasLasVentas[selectedDate]) {
@@ -254,41 +219,26 @@
             todasLasVentas[selectedDate].push(nuevaVenta);
             ventasDiarias = todasLasVentas[selectedDate];
             
-                            saveDataToLocal(); // Guarda en local inmediatamente
-            saveAllDataToFirebase(); // Guarda en Firebase
-
+            saveDataToLocal(); // Guarda todo en local
 
             msg.textContent = `Venta registrada. Ganancia: S/ ${gananciaVenta.toFixed(2)}`;
             msg.className = 'mt-3 text-sm text-center text-green-500 font-semibold';
             
-            select.value = ''; cantidadInput.value = '1'; precioTotalInput.value = ''; updateQuantityLabel(); renderizarTodo();
+            // Limpiar campos
+            select.value = ''; 
+            cantidadInput.value = '1'; 
+            precioTotalInput.value = ''; 
+            handleProductSelectionChange(); // Oculta los campos de nuevo producto si estaban visibles
+            renderizarTodo();
         }
 
-        // --- El resto de tus funciones no necesitan cambios ---
-        // Pega aquí todas las demás funciones: initializeProducts, handleDateChange, 
-        // saveProductChanges, confirmDelete, addProduct, y todas las de renderizado.
-        // ...
         document.addEventListener('DOMContentLoaded', async () => {
             loadApplication();
         });
 
-
-
         async function loadApplication() {
             const appContainer = document.getElementById('app-container');
-            let dataLoaded = false;
-
-            // Intenta cargar desde Firebase
-            const firebaseData = await window.loadDataFromFirebase();
-            if (firebaseData) {
-                productos = firebaseData.productos || [];
-                todasLasVentas = firebaseData.ventas || {};
-                nextProductId = firebaseData.nextProductId || (productos.length > 0 ? Math.max(...productos.map(p => p.id)) + 1 : 1);
-                ventasDiarias = todasLasVentas[selectedDate] || [];
-                dataLoaded = true;
-            } else if (loadDataFromLocal()) { // Si no hay datos en Firebase, intenta cargar desde LocalStorage
-                dataLoaded = true;
-            }
+            let dataLoaded = loadDataFromLocal();
 
             if (!dataLoaded) {
                 initializeProducts();
@@ -298,11 +248,12 @@
             renderizarTodo();
             lucideScript.onload = safeCreateIcons;
         }
-        function initializeProducts() { const initialData = [ { nombre: "Aceite vegetal Deleite 1L", costo: 7.50 }, { nombre: "Aceite vegetal Patrona 1L", costo: 8.00 }, { nombre: "Aceite vegetal Primor 1L", costo: 9.20 }, { nombre: "Arroz 1 kg", costo: 4.00 }, { nombre: "Avena clásica 3 ositos (bolsa)", costo: 4.80 }, { nombre: "Avena en Hojuelas Quaker (caja)", costo: 6.50 }, { nombre: "Avena quinua 3 ositos (bolsa)", costo: 5.20 }, { nombre: "Azúcar 1kg", costo: 4.30 }, { nombre: "Bebida (Brut/Cava) Marca no clara", costo: 15.00 }, { nombre: "Bolsas de Granos Florida (varios)", costo: 3.50 }, { nombre: "Caldos Maggi (cubo x 6)", costo: 2.80 }, { nombre: "Canela (bolsa pequeña)", costo: 1.50 }, { nombre: "Chocolate de taza (tableta)", costo: 5.50 }, { nombre: "Chocolate en Barra Sublime (unid)", costo: 1.80 }, { nombre: "Cocoa winter's (lata)", costo: 7.00 }, { nombre: "Conserva Florida (atún)", costo: 3.80 }, { nombre: "Conserva Gloria (atún)", costo: 3.50 }, { nombre: "Detergente en Polvo Noble 1kg", costo: 7.50 }, { nombre: "Esencia de Vainilla Katita Vainilla", costo: 3.00 }, { nombre: "Fideos sopa Anita 250g", costo: 1.50 }, { nombre: "Fideos tallarin Anita 500g", costo: 2.40 }, { nombre: "Filtrante Anis Herbi (caja 25u)", costo: 4.50 }, { nombre: "Filtrante manzanilla McColin's", costo: 4.80 }, { nombre: "Filtrante Te bolsita (caja 25u)", costo: 3.50 }, { nombre: "Fosforo (caja)", costo: 0.80 }, { nombre: "Granos/Legumbres Compass 500g", costo: 4.00 }, { nombre: "Harina 1kg", costo: 3.20 }, { nombre: "Harina de Trigo Medalla 1kg", costo: 3.50 }, { nombre: "Harina Preparada/Maicena Maizena Duryea", costo: 5.50 }, { nombre: "Hongos laurel (bolsa pequeña)", costo: 1.00 }, { nombre: "Leche condensada (lata)", costo: 4.80 }, { nombre: "Leche Bonlé (lata)", costo: 2.90 }, { nombre: "Leche Bonlé (caja 1L)", costo: 3.80 }, { nombre: "Leche en bolsa 1L", costo: 3.20 }, { nombre: "Leche Gloria (caja 1L)", costo: 4.20 }, { nombre: "Leche Gloria (chica lata)", costo: 3.00 }, { nombre: "Leche Gloria (grande lata)", costo: 3.90 }, { nombre: "Leche Gloria (niños caja)", costo: 4.50 }, { nombre: "Leche Gloria zero lactosa (lata)", costo: 3.50 }, { nombre: "Leche Gloria zero lactosa (caja)", costo: 4.80 }, { nombre: "Leche Laive (lata)", costo: 3.10 }, { nombre: "Leche Laive sin lactosa (caja)", costo: 4.90 }, { nombre: "Leche Pura vida (chica lata)", costo: 2.80 }, { nombre: "Leche Pura vida (grande lata)", costo: 3.70 }, { nombre: "Lenteja 1 kg", costo: 6.00 }, { nombre: "Maizena Duryea", costo: 5.50 }, { nombre: "Mani (bolsa pequeña)", costo: 1.50 }, { nombre: "Mayonesa Alacena (sachet)", costo: 2.00 }, { nombre: "Mezcla Láctea Pura Vida (caja)", costo: 3.50 }, { nombre: "Papel Higiénico Jade (rollo)", costo: 1.20 }, { nombre: "Papel Higiénico Noble 2 rollos", costo: 3.00 }, { nombre: "Papel Higiénico Paracas 4 rollos", costo: 6.00 }, { nombre: "Papel Higiénico Tull 6 rollos", costo: 8.50 }, { nombre: "Papel servilleta Sublime", costo: 0.50 }, { nombre: "Papel Toalla Nova (rollo)", costo: 5.00 }, { nombre: "Papel Toalla Paracas (rollo)", costo: 4.00 }, { nombre: "Pimienta comino (bolsa pequeña)", costo: 1.00 }, { nombre: "Sala de tomate Don Vittorio", costo: 2.50 }, { nombre: "Sillao Ajinomoto (botella)", costo: 4.00 }, { nombre: "Sillao Kikí (botella)", costo: 3.80 }, { nombre: "Sopas/Condimentos McCrispy's (o similar)", costo: 1.50 }, { nombre: "Sopas/Condimentos Sibarita (o similar)", costo: 1.20 }, { nombre: "Vainilla Katita", costo: 3.00 }, ]; productos = initialData.map((p, i) => ({ id: i + 1, 'Producto': p.nombre, 'Costo (S/)': p.costo, 'PVP Real (S/)': parseFloat((p.costo * 1.20).toFixed(2)), 'Unidad': getUnitFromProductName(p.nombre) })); nextProductId = productos.length + 1; saveDataToLocal(); saveAllDataToFirebase(); }
+
+        function initializeProducts() { const initialData = [ { nombre: "Aceite vegetal Deleite 1L", costo: 7.50 }, { nombre: "Aceite vegetal Patrona 1L", costo: 8.00 }, { nombre: "Aceite vegetal Primor 1L", costo: 9.20 }, { nombre: "Arroz 1 kg", costo: 4.00 }, { nombre: "Avena clásica 3 ositos (bolsa)", costo: 4.80 }, { nombre: "Avena en Hojuelas Quaker (caja)", costo: 6.50 }, { nombre: "Avena quinua 3 ositos (bolsa)", costo: 5.20 }, { nombre: "Azúcar 1kg", costo: 4.30 }, { nombre: "Bebida (Brut/Cava) Marca no clara", costo: 15.00 }, { nombre: "Bolsas de Granos Florida (varios)", costo: 3.50 }, { nombre: "Caldos Maggi (cubo x 6)", costo: 2.80 }, { nombre: "Canela (bolsa pequeña)", costo: 1.50 }, { nombre: "Chocolate de taza (tableta)", costo: 5.50 }, { nombre: "Chocolate en Barra Sublime (unid)", costo: 1.80 }, { nombre: "Cocoa winter's (lata)", costo: 7.00 }, { nombre: "Conserva Florida (atún)", costo: 3.80 }, { nombre: "Conserva Gloria (atún)", costo: 3.50 }, { nombre: "Detergente en Polvo Noble 1kg", costo: 7.50 }, { nombre: "Esencia de Vainilla Katita Vainilla", costo: 3.00 }, { nombre: "Fideos sopa Anita 250g", costo: 1.50 }, { nombre: "Fideos tallarin Anita 500g", costo: 2.40 }, { nombre: "Filtrante Anis Herbi (caja 25u)", costo: 4.50 }, { nombre: "Filtrante manzanilla McColin's", costo: 4.80 }, { nombre: "Filtrante Te bolsita (caja 25u)", costo: 3.50 }, { nombre: "Fosforo (caja)", costo: 0.80 }, { nombre: "Granos/Legumbres Compass 500g", costo: 4.00 }, { nombre: "Harina 1kg", costo: 3.20 }, { nombre: "Harina de Trigo Medalla 1kg", costo: 3.50 }, { nombre: "Harina Preparada/Maicena Maizena Duryea", costo: 5.50 }, { nombre: "Hongos laurel (bolsa pequeña)", costo: 1.00 }, { nombre: "Leche condensada (lata)", costo: 4.80 }, { nombre: "Leche Bonlé (lata)", costo: 2.90 }, { nombre: "Leche Bonlé (caja 1L)", costo: 3.80 }, { nombre: "Leche en bolsa 1L", costo: 3.20 }, { nombre: "Leche Gloria (caja 1L)", costo: 4.20 }, { nombre: "Leche Gloria (chica lata)", costo: 3.00 }, { nombre: "Leche Gloria (grande lata)", costo: 3.90 }, { nombre: "Leche Gloria (niños caja)", costo: 4.50 }, { nombre: "Leche Gloria zero lactosa (lata)", costo: 3.50 }, { nombre: "Leche Gloria zero lactosa (caja)", costo: 4.80 }, { nombre: "Leche Laive (lata)", costo: 3.10 }, { nombre: "Leche Laive sin lactosa (caja)", costo: 4.90 }, { nombre: "Leche Pura vida (chica lata)", costo: 2.80 }, { nombre: "Leche Pura vida (grande lata)", costo: 3.70 }, { nombre: "Lenteja 1 kg", costo: 6.00 }, { nombre: "Maizena Duryea", costo: 5.50 }, { nombre: "Mani (bolsa pequeña)", costo: 1.50 }, { nombre: "Mayonesa Alacena (sachet)", costo: 2.00 }, { nombre: "Mezcla Láctea Pura Vida (caja)", costo: 3.50 }, { nombre: "Papel Higiénico Jade (rollo)", costo: 1.20 }, { nombre: "Papel Higiénico Noble 2 rollos", costo: 3.00 }, { nombre: "Papel Higiénico Paracas 4 rollos", costo: 6.00 }, { nombre: "Papel Higiénico Tull 6 rollos", costo: 8.50 }, { nombre: "Papel servilleta Sublime", costo: 0.50 }, { nombre: "Papel Toalla Nova (rollo)", costo: 5.00 }, { nombre: "Papel Toalla Paracas (rollo)", costo: 4.00 }, { nombre: "Pimienta comino (bolsa pequeña)", costo: 1.00 }, { nombre: "Sala de tomate Don Vittorio", costo: 2.50 }, { nombre: "Sillao Ajinomoto (botella)", costo: 4.00 }, { nombre: "Sillao Kikí (botella)", costo: 3.80 }, { nombre: "Sopas/Condimentos McCrispy's (o similar)", costo: 1.50 }, { nombre: "Sopas/Condimentos Sibarita (o similar)", costo: 1.20 }, { nombre: "Vainilla Katita", costo: 3.00 }, ]; productos = initialData.map((p, i) => ({ id: i + 1, 'Producto': p.nombre, 'Costo (S/)': p.costo, 'PVP Real (S/)': parseFloat((p.costo * 1.20).toFixed(2)), 'Unidad': getUnitFromProductName(p.nombre) })); nextProductId = productos.length + 1; saveDataToLocal(); }
         async function handleDateChange(event) { selectedDate = event.target.value; await fetchSalesForDate(selectedDate); renderizarTodo(); }
-        function saveProductChanges(productId) { const nameInput = document.getElementById(`name-${productId}`); const costInput = document.getElementById(`cost-${productId}`); const pvpInput = document.getElementById(`pvp-${productId}`); const newName = nameInput.value.trim(); const newCost = parseFloat(costInput.value); const newPVP = parseFloat(pvpInput.value); if (!newName) { alertMessage('El nombre del producto no puede estar vacío.', 'red'); return; } if (isNaN(newCost) || newCost < 0) { alertMessage('El Costo debe ser un número positivo.', 'red'); return; } if (isNaN(newPVP) || newPVP < 0) { alertMessage('El PVP Real debe ser un número positivo.', 'red'); return; } const productIndex = productos.findIndex(p => p.id === productId); if (productIndex !== -1) { productos[productIndex]['Producto'] = newName; productos[productIndex]['Costo (S/)'] = newCost; productos[productIndex]['PVP Real (S/)'] = newPVP; productos[productIndex]['Unidad'] = getUnitFromProductName(newName); saveDataToLocal(); saveAllDataToFirebase(); renderizarTodo(); alertMessage('Producto guardado localmente.', 'blue'); } }
-        function confirmDelete(productId, productName) { if (confirm(`¿Estás seguro de que quieres eliminar "${productName}"?`)) { productos = productos.filter(p => p.id !== productId); saveDataToLocal(); saveAllDataToFirebase(); renderizarTodo(); } }
-        function addProduct() { const newProduct = { id: nextProductId++, 'Producto': "Nuevo Producto (kg, L o unid)", 'Costo (S/)': 1.00, 'PVP Real (S/)': 1.20, 'Unidad': 'unid' }; productos.push(newProduct); saveDataToLocal(); saveAllDataToFirebase(); renderizarTodo(); setTimeout(() => { const newRow = document.getElementById(`row-${newProduct.id}`); if (newRow) { newRow.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById(`name-${newProduct.id}`).focus(); } }, 50); }
+        function saveProductChanges(productId) { const nameInput = document.getElementById(`name-${productId}`); const costInput = document.getElementById(`cost-${productId}`); const pvpInput = document.getElementById(`pvp-${productId}`); const newName = nameInput.value.trim(); const newCost = parseFloat(costInput.value); const newPVP = parseFloat(pvpInput.value); if (!newName) { alertMessage('El nombre del producto no puede estar vacío.', 'red'); return; } if (isNaN(newCost) || newCost < 0) { alertMessage('El Costo debe ser un número positivo.', 'red'); return; } if (isNaN(newPVP) || newPVP < 0) { alertMessage('El PVP Real debe ser un número positivo.', 'red'); return; } const productIndex = productos.findIndex(p => p.id === productId); if (productIndex !== -1) { productos[productIndex]['Producto'] = newName; productos[productIndex]['Costo (S/)'] = newCost; productos[productIndex]['PVP Real (S/)'] = newPVP; productos[productIndex]['Unidad'] = getUnitFromProductName(newName); saveDataToLocal(); renderizarTodo(); alertMessage('Producto guardado localmente.', 'blue'); } }
+        function confirmDelete(productId, productName) { if (confirm(`¿Estás seguro de que quieres eliminar "${productName}"?`)) { productos = productos.filter(p => p.id !== productId); saveDataToLocal(); renderizarTodo(); } }
+        function addProduct() { const newProduct = { id: nextProductId++, 'Producto': "Nuevo Producto (kg, L o unid)", 'Costo (S/)': 1.00, 'PVP Real (S/)': 1.20, 'Unidad': 'unid' }; productos.push(newProduct); saveDataToLocal(); renderizarTodo(); setTimeout(() => { const newRow = document.getElementById(`row-${newProduct.id}`); if (newRow) { newRow.scrollIntoView({ behavior: 'smooth', block: 'center' }); document.getElementById(`name-${newProduct.id}`).focus(); } }, 50); }
         function safeCreateIcons() { if (typeof lucide !== 'undefined' && lucide.createIcons) { lucide.createIcons(); } }
         function parseFractionToFloat(inputString) { if (!inputString) return NaN; const cleanedInput = String(inputString).trim().replace(',', '.'); const fractionMatch = cleanedInput.match(/^(\d+)\/(\d+)$/); if (fractionMatch) { const numerator = parseInt(fractionMatch[1], 10); const denominator = parseInt(fractionMatch[2], 10); if (denominator !== 0) return numerator / denominator; } const decimalValue = parseFloat(cleanedInput); return !isNaN(decimalValue) ? decimalValue : NaN; }
         function getUnitFromProductName(name) { name = name.toLowerCase(); if (name.includes('kg') || name.includes(' lenteja') || name.includes('harina') || name.includes('azúcar') || name.includes('arroz')) return 'kg'; if (name.includes('1l') || name.includes('litro') || name.includes('aceite')) return 'L'; return 'unid'; }
@@ -310,9 +261,140 @@
         function calcularTotales() { const totalVenta = ventasDiarias.reduce((sum, venta) => sum + (venta['Precio Total (S/)'] || 0), 0); const totalGanancia = ventasDiarias.reduce((sum, venta) => sum + (venta['Ganancia (S/)'] || 0), 0); return { totalVenta, totalGanancia }; }
         function renderizarTodo() { const currentTabElement = document.querySelector('.tab-button.active'); const currentTab = currentTabElement ? currentTabElement.id.split('-')[1] : 'registro'; const totales = calcularTotales(); renderDashboard(totales.totalVenta, totales.totalGanancia); if (currentTab === 'registro') renderRegistroVentas(); if (currentTab === 'inventario') renderGestionInventario(); safeCreateIcons(); }
         function renderDashboard(ventaReal, gananciaNeta) { const dashboardContainer = document.getElementById('dashboard'); const diferencia = gananciaNeta - GANANCIA_MINIMA; const cumplioMeta = gananciaNeta >= GANANCIA_MINIMA; const colorFondo = cumplioMeta ? 'bg-blue-600' : 'bg-red-500'; const icono = cumplioMeta ? 'trending-up' : 'trending-down'; const mensajeStatus = cumplioMeta ? '¡Felicidades! Meta de Ganancia Mínima cumplida.' : 'ALERTA: Ganancia Mínima no alcanzada.'; const diferenciaTexto = cumplioMeta ? `¡Sobrante de S/ ${diferencia.toFixed(2)}!` : `Faltan S/ ${Math.abs(diferencia).toFixed(2)} para los ${GANANCIA_MINIMA.toFixed(2)}.`; const tarjetaHTML = ` <div id="main-card" class="${colorFondo} text-white p-6 rounded-xl card-shadow transition-all duration-300 card-update-pulse"> <div class="flex items-start justify-between"> <h2 class="text-lg font-semibold opacity-80 mb-1">VENTA REAL ACUMULADA</h2> <i data-lucide="${icono}" class="w-6 h-6"></i> </div> <p class="text-5xl font-extrabold mb-4">S/ ${ventaReal.toFixed(2)}</p> <div class="space-y-2 text-sm pt-4 border-t border-white border-opacity-30"> <div class="flex justify-between"><span class="opacity-70">Meta Ganancia Mínima:</span><span class="font-bold">S/ ${GANANCIA_MINIMA.toFixed(2)}</span></div> <div class="flex justify-between text-lg font-bold"><span>GANANCIA NETA REAL:</span><span>${gananciaNeta.toFixed(2)}</span></div> <div class="flex justify-between font-semibold pt-2"><span>Estado de la Meta:</span><span class="font-extrabold ${cumplioMeta ? 'text-green-200' : 'text-red-200'}">${diferenciaTexto}</span></div> </div> </div> <div class="text-center mt-4 p-3 rounded-lg bg-white border border-gray-200 text-gray-700 font-semibold card-shadow">${mensajeStatus}</div> `; dashboardContainer.innerHTML = tarjetaHTML; safeCreateIcons(); const mainCard = document.getElementById('main-card'); mainCard.classList.remove('card-update-pulse'); void mainCard.offsetWidth; mainCard.classList.add('card-update-pulse'); }
-        function updateQuantityLabel() { const select = document.getElementById('regSelectProducto'); const label = document.getElementById('regCantidadLabel'); if (!select || !label) return; const selectedOption = select.options[select.selectedIndex]; let unitText = 'Unidades'; if (selectedOption && selectedOption.value) { const producto = productos.find(p => p.id === parseInt(selectedOption.value)); if (producto) { if (producto['Unidad'] === 'kg') unitText = 'Kilogramos (Ej: 0.5 o 1/2)'; else if (producto['Unidad'] === 'L') unitText = 'Litros (Ej: 0.25 o 1/4)'; } } label.textContent = `Cantidad (${unitText})`; }
-        function renderRegistroVentas() { const container = document.getElementById('content-registro'); if (container.classList.contains('hidden')) return; const hoy = new Date(); const anio = hoy.getFullYear(); const mes = String(hoy.getMonth() + 1).padStart(2, '0'); const dia = String(hoy.getDate()).padStart(2, '0'); const today = `${anio}-${mes}-${dia}`; const isToday = selectedDate === today; const displayDateObj = new Date(selectedDate + 'T12:00:00Z'); const displayDate = displayDateObj.toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); const formHTML = ` <h3 class="text-xl font-semibold mb-4 text-gray-700">Registrar Nueva Venta</h3> <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"> <div class="col-span-2 md:col-span-1"> <label for="regSelectProducto" class="block text-sm font-medium text-gray-600">Producto</label> <select id="regSelectProducto" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" onchange="updateSalePrice(); updateQuantityLabel();"> <option value="" disabled selected>-- Elija un producto --</option> ${productos.map(p => `<option value="${p.id}">${p['Producto']}</option>`).join('')} </select> </div> <div> <label for="regCantidadVendida" class="block text-sm font-medium text-gray-600" id="regCantidadLabel">Cantidad</label> <input type="text" id="regCantidadVendida" placeholder="Ej: 0.5 o 1/2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" value="1" oninput="updateSalePrice()"> </div> <div> <label for="regPrecioVenta" class="block text-sm font-medium text-gray-600">Precio Total (S/)</label> <input type="number" id="regPrecioVenta" placeholder="Total" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border font-bold" min="0" step="0.01"> <p id="precio-unitario-hint" class="text-xs text-gray-500 mt-1">PVP unitario sugerido: S/ 0.00</p> </div> <div> <label for="regMetodoPago" class="block text-sm font-medium text-gray-600">Método de Pago</label> <select id="regMetodoPago" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"> <option value="Efectivo">Efectivo</option> <option value="Yape">Yape</option> </select> </div> </div> <button onclick="registrarVenta()" class="w-full md:w-auto px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors">Confirmar Venta</button> <p id="msg-venta" class="mt-3 text-sm text-center text-gray-500"></p> `; container.innerHTML = ` <div class="flex flex-wrap justify-between items-center mb-4 pb-4 border-b"> <h2 class="text-2xl font-semibold text-gray-700 mb-2 md:mb-0">Visor de Ventas</h2> <div class="flex items-center"> <label for="sales-date-picker" class="text-sm font-medium text-gray-600 mr-2">Mostrando ventas de:</label> <input type="date" id="sales-date-picker" value="${selectedDate}" max="${today}" class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"> </div> </div> ${isToday ? formHTML : '<div class="text-center p-4 bg-gray-100 rounded-lg text-gray-600">Solo se pueden registrar nuevas ventas para el día de hoy. Seleccione la fecha actual para registrar ventas.</div>'} <h3 class="text-xl font-semibold mt-8 mb-4 border-t pt-4">Ventas Registradas de ${displayDate}</h3> <div id="ventas-list" class="space-y-3"></div> `; document.getElementById('sales-date-picker').addEventListener('change', handleDateChange); if (isToday) { updateSalePrice(); updateQuantityLabel(); } renderVentasList(); }
-        function updateSalePrice() { const select = document.getElementById('regSelectProducto'); const cantidadInput = document.getElementById('regCantidadVendida'); const precioTotalInput = document.getElementById('regPrecioVenta'); const hint = document.getElementById('precio-unitario-hint'); if (!select || !cantidadInput || !precioTotalInput || !hint) return; const selectedOption = select.options[select.selectedIndex]; let pvpUnitario = 0; if (selectedOption && selectedOption.value) { const producto = productos.find(p => p.id === parseInt(selectedOption.value)); if (producto) pvpUnitario = producto['PVP Real (S/)']; } hint.textContent = `PVP unitario sugerido: S/ ${pvpUnitario.toFixed(2)} por unidad/kg/L`; const cantidadDecimal = parseFractionToFloat(cantidadInput.value); if (isNaN(cantidadDecimal) || cantidadDecimal <= 0) { precioTotalInput.value = ''; if (cantidadInput.value) { hint.textContent = 'Error en Cantidad. Use 1, 0.5, 1/2, etc.'; precioTotalInput.classList.add('border-red-500'); } return; } precioTotalInput.classList.remove('border-red-500'); precioTotalInput.value = (pvpUnitario * cantidadDecimal).toFixed(2); }
+        function updateQuantityLabel() { const select = document.getElementById('regSelectProducto'); const label = document.getElementById('regCantidadLabel'); if (!select || !label) return; const selectedOption = select.options[select.selectedIndex]; let unitText = 'Unidades'; if (selectedOption && selectedOption.value && selectedOption.value !== '--nuevo--') { const producto = productos.find(p => p.id === parseInt(selectedOption.value)); if (producto) { if (producto['Unidad'] === 'kg') unitText = 'Kilogramos (Ej: 0.5 o 1/2)'; else if (producto['Unidad'] === 'L') unitText = 'Litros (Ej: 0.25 o 1/4)'; } } label.textContent = `Cantidad (${unitText})`; }
+        
+        function handleProductSelectionChange() {
+            const select = document.getElementById('regSelectProducto');
+            const newProductFields = document.getElementById('nuevo-producto-fields');
+            if (select.value === '--nuevo--') {
+                newProductFields.style.display = 'grid';
+            } else {
+                newProductFields.style.display = 'none';
+            }
+            updateSalePrice();
+            updateQuantityLabel();
+        }
+
+        function renderRegistroVentas() {
+            const container = document.getElementById('content-registro');
+            if (container.classList.contains('hidden')) return;
+            const hoy = new Date();
+            const anio = hoy.getFullYear();
+            const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+            const dia = String(hoy.getDate()).padStart(2, '0');
+            const today = `${anio}-${mes}-${dia}`;
+            const isToday = selectedDate === today;
+            const displayDateObj = new Date(selectedDate + 'T12:00:00Z');
+            const displayDate = displayDateObj.toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+            const formHTML = `
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Registrar Nueva Venta</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="col-span-1 md:col-span-4">
+                        <label for="regSelectProducto" class="block text-sm font-medium text-gray-600">Producto</label>
+                        <select id="regSelectProducto" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" onchange="handleProductSelectionChange()">
+                            <option value="" disabled selected>-- Elija un producto --</option>
+                            <option value="--nuevo--" class="font-bold text-blue-600">--- Registrar Nuevo Producto ---</option>
+                            ${productos.map(p => `<option value="${p.id}">${p['Producto']}</option>`).join('')}
+                        </select>
+                    </div>
+                    
+                    <!-- Campos para nuevo producto (ocultos por defecto) -->
+                    <div id="nuevo-producto-fields" class="col-span-1 md:col-span-4 grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border border-blue-200 rounded-lg bg-blue-50" style="display: none;">
+                        <div class="col-span-2">
+                            <label for="nuevoNombre" class="block text-sm font-medium text-blue-700">Nombre del Nuevo Producto</label>
+                            <input type="text" id="nuevoNombre" placeholder="Ej: Arroz Costeño 1kg" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                        </div>
+                        <div>
+                            <label for="nuevoCosto" class="block text-sm font-medium text-blue-700">Costo (S/)</label>
+                            <input type="number" id="nuevoCosto" placeholder="5.00" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                        </div>
+                        <div>
+                            <label for="nuevoPVP" class="block text-sm font-medium text-blue-700">PVP por Unidad (S/)</label>
+                            <input type="number" id="nuevoPVP" placeholder="6.00" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                        </div>
+                         <div>
+                            <label for="nuevaUnidad" class="block text-sm font-medium text-blue-700">Unidad de Venta</label>
+                            <select id="nuevaUnidad" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                                <option value="unid">Unidad (unid)</option>
+                                <option value="kg">Kilogramo (kg)</option>
+                                <option value="L">Litro (L)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="regCantidadVendida" class="block text-sm font-medium text-gray-600" id="regCantidadLabel">Cantidad</label>
+                        <input type="text" id="regCantidadVendida" placeholder="Ej: 0.5 o 1/2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" value="1" oninput="updateSalePrice()">
+                    </div>
+                    <div>
+                        <label for="regPrecioVenta" class="block text-sm font-medium text-gray-600">Precio Total (S/)</label>
+                        <input type="number" id="regPrecioVenta" placeholder="Total" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border font-bold" min="0" step="0.01">
+                        <p id="precio-unitario-hint" class="text-xs text-gray-500 mt-1">PVP unitario: S/ 0.00</p>
+                    </div>
+                    <div>
+                        <label for="regMetodoPago" class="block text-sm font-medium text-gray-600">Método de Pago</label>
+                        <select id="regMetodoPago" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Yape">Yape</option>
+                        </select>
+                    </div>
+                </div>
+                <button onclick="registrarVenta()" class="w-full md:w-auto px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors">Confirmar Venta</button>
+                <p id="msg-venta" class="mt-3 text-sm text-center text-gray-500"></p>
+            `;
+
+            container.innerHTML = `
+                <div class="flex flex-wrap justify-between items-center mb-4 pb-4 border-b">
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-2 md:mb-0">Visor de Ventas</h2>
+                    <div class="flex items-center">
+                        <label for="sales-date-picker" class="text-sm font-medium text-gray-600 mr-2">Mostrando ventas de:</label>
+                        <input type="date" id="sales-date-picker" value="${selectedDate}" max="${today}" class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+                ${isToday ? formHTML : '<div class="text-center p-4 bg-gray-100 rounded-lg text-gray-600">Solo se pueden registrar nuevas ventas para el día de hoy. Seleccione la fecha actual para registrar ventas.</div>'}
+                <h3 class="text-xl font-semibold mt-8 mb-4 border-t pt-4">Ventas Registradas de ${displayDate}</h3>
+                <div id="ventas-list" class="space-y-3"></div>
+            `;
+            document.getElementById('sales-date-picker').addEventListener('change', handleDateChange);
+            if (isToday) {
+                handleProductSelectionChange(); // Para asegurar que los campos de nuevo producto se oculten al renderizar
+            }
+            renderVentasList();
+        }
+
+        function updateSalePrice() {
+            const select = document.getElementById('regSelectProducto');
+            const cantidadInput = document.getElementById('regCantidadVendida');
+            const precioTotalInput = document.getElementById('regPrecioVenta');
+            const hint = document.getElementById('precio-unitario-hint');
+            if (!select || !cantidadInput || !precioTotalInput || !hint) return;
+
+            const selectedOption = select.options[select.selectedIndex];
+            let pvpUnitario = 0;
+
+            if (selectedOption && selectedOption.value && selectedOption.value !== '--nuevo--') {
+                const producto = productos.find(p => p.id === parseInt(selectedOption.value));
+                if (producto) pvpUnitario = producto['PVP Real (S/)'];
+            } else if (selectedOption.value === '--nuevo--') {
+                pvpUnitario = parseFloat(document.getElementById('nuevoPVP').value) || 0;
+            }
+
+            hint.textContent = `PVP unitario: S/ ${pvpUnitario.toFixed(2)}`;
+            const cantidadDecimal = parseFractionToFloat(cantidadInput.value);
+
+            if (isNaN(cantidadDecimal) || cantidadDecimal <= 0) {
+                precioTotalInput.value = '';
+                if (cantidadInput.value) {
+                    hint.textContent = 'Error en Cantidad. Use 1, 0.5, 1/2, etc.';
+                    precioTotalInput.classList.add('border-red-500');
+                }
+                return;
+            }
+            precioTotalInput.classList.remove('border-red-500');
+            precioTotalInput.value = (pvpUnitario * cantidadDecimal).toFixed(2);
+        }
+
         function renderVentasList() {
             const listContainer = document.getElementById('ventas-list');
             if (!listContainer) return;
@@ -355,7 +437,6 @@
                 ventasDiarias.splice(index, 1);
                 todasLasVentas[selectedDate] = ventasDiarias;
                 saveDataToLocal();
-                saveAllDataToFirebase();
                 renderizarTodo();
             }
         }
@@ -437,12 +518,9 @@
             todasLasVentas[selectedDate] = ventasDiarias;
 
             saveDataToLocal();
-            saveAllDataToFirebase();
             renderizarTodo();
             closeEditSaleModal();
         }
-
-
 
         function renderGestionInventario() { const container = document.getElementById('content-inventario'); if (container.classList.contains('hidden')) return; container.innerHTML = ` <h2 class="text-2xl font-semibold mb-4 text-gray-700">Lista y Edición de Productos</h2> <p class="text-sm text-gray-500 mb-6">Los cambios se guardan localmente en tu navegador de forma automática.</p> <button onclick="addProduct()" class="mb-4 px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors shadow flex items-center"> <i data-lucide="plus" class="w-5 h-5 mr-2"></i> Añadir Nuevo Producto </button> <div class="overflow-x-auto rounded-lg border"> <table class="min-w-full divide-y divide-gray-200"> <thead class="bg-gray-100"> <tr> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Producto</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Costo (S/)</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">PVP Sugerido (S/)</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">PVP Real (S/)</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Margen Actual (S/)</th> <th class="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Acción</th> </tr> </thead> <tbody id="inventory-table-body" class="bg-white divide-y divide-gray-200"></tbody> </table> </div> `; renderInventoryTable(); safeCreateIcons(); }
         function renderInventoryTable() { const tbody = document.getElementById('inventory-table-body'); if (!tbody) return; tbody.innerHTML = productos.map(p => { const costo = p['Costo (S/)']; const pvpReal = p['PVP Real (S/)']; const margenActual = pvpReal - costo; const pvpSugerido = (costo * 1.20).toFixed(2); const margenColor = margenActual > 0 ? 'text-green-600' : (margenActual < 0 ? 'text-red-500' : 'text-gray-500'); return ` <tr id="row-${p.id}" class="hover:bg-gray-50 transition-colors"> <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900"><input type="text" id="name-${p.id}" value="${p['Producto']}" class="input-inline" /></td> <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500"><input type="number" id="cost-${p.id}" value="${costo.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td> <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${pvpSugerido}</td> <td class="px-3 py-2 whitespace-nowrap"><input type="number" id="pvp-${p.id}" value="${pvpReal.toFixed(2)}" class="input-inline w-20" step="0.01" min="0"></td> <td class="px-3 py-2 whitespace-nowrap text-sm font-bold ${margenColor}">S/ ${margenActual.toFixed(2)}</td> <td class="px-3 py-2 whitespace-nowrap text-sm space-x-2"> <button onclick="saveProductChanges(${p.id})" class="px-2 py-1 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors text-xs shadow">Guardar</button> <button onclick="confirmDelete(${p.id}, '${p['Producto']}')" class="px-2 py-1 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 transition-colors text-xs shadow">Eliminar</button> </td> </tr> `; }).join(''); }
