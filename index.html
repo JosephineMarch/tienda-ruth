@@ -108,14 +108,7 @@
 
     <!-- ELEMENTO DE CARGA -->
 
-    <div id="password-prompt" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
-            <h3 class="text-xl font-semibold mb-4">Ingrese la contraseña</h3>
-            <input type="password" id="password-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
-            <button onclick="checkPassword()" class="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Entrar</button>
-            <p id="password-error" class="text-red-500 text-sm mt-2"></p>
-        </div>
-    </div>
+
 
     <div id="app-container" style="display: none;">
         <div class="max-w-6xl mx-auto">
@@ -276,27 +269,10 @@
         // saveProductChanges, confirmDelete, addProduct, y todas las de renderizado.
         // ...
         document.addEventListener('DOMContentLoaded', async () => {
-            if (localStorage.getItem('bodegaAuth') === 'true') {
-                loadApplication();
-            } else {
-                document.getElementById('password-prompt').classList.remove('hidden');
-            }
+            loadApplication();
         });
 
-        function checkPassword() {
-            const passwordInput = document.getElementById('password-input');
-            const password = passwordInput.value;
-            // La contrasena sera reemplazada por el secreto de GitHub en el proceso de build
-            if (password === "perica") {
-                localStorage.setItem('bodegaAuth', 'true');
-                document.getElementById('password-prompt').classList.add('hidden');
-                loadApplication();
-            } else {
-                const errorElement = document.getElementById('password-error');
-                errorElement.textContent = "Contraseña incorrecta.";
-                passwordInput.value = "";
-            }
-        }
+
 
         async function loadApplication() {
             const appContainer = document.getElementById('app-container');
@@ -319,7 +295,6 @@
             }
 
             appContainer.style.display = 'block';
-            document.getElementById('password-prompt').style.display = 'none';
             renderizarTodo();
             lucideScript.onload = safeCreateIcons;
         }
